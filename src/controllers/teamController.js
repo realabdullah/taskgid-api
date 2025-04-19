@@ -1,13 +1,24 @@
-import WorkspaceTeam from '../models/workspaceTeamModel.js';
-import Workspace from '../models/workspaceModel.js';
+import {Workspace} from '../models/Workspace.js';
+import User from '../models/User.js';
+import 'dotenv/config';
 
 export const getWorkspaceTeam = async (req, res) => {
     try {
         const {slug} = req.params;
-        const workspace = await Workspace.findOne({slug});
-        const workspaceTeam = await WorkspaceTeam.find({workspace: workspace._id})
-            .populate('user', 'firstName lastName username email profile_picture');
-        res.json({success: true, team: workspaceTeam});
+        const workspace = await Workspace.findOne({
+            where: {slug},
+            include: [{
+                model: User,
+                as: 'team',
+                attributes: ['firstName', 'lastName', 'username', 'email', 'profilePicture'],
+            }],
+        });
+
+        if (!workspace) {
+            return res.status(404).json({error: 'Workspace not found'});
+        }
+
+        res.json({success: true, team: workspace.team});
     } catch (error) {
         res.status(400).json({success: false, error: error.message});
     }

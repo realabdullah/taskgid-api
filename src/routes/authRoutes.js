@@ -2,17 +2,24 @@ import express from 'express';
 import {
     register, login, logout, refresh,
 } from '../controllers/userController.js';
-import {requestLoginWithAuthn, loginWithAuthn} from '../controllers/authnController.js';
+import {requestLoginWithAuthn, loginWithAuthn, authLimiter} from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
+import {validateAuthInput} from '../middleware/validationMiddleware.js';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
 
-router.post('/create', register);
-router.post('/login', login);
-router.post('/refresh', refresh);
+// Apply rate limiting to all auth endpoints
+router.use(authLimiter);
+
+// Authentication routes
+router.post('/register', validateAuthInput, register);
+router.post('/login', validateAuthInput, login);
 router.post('/logout', authMiddleware, logout);
-router.post('/request-authn-login', requestLoginWithAuthn);
-router.post('/authn-login', loginWithAuthn);
+router.post('/refresh', validateAuthInput, refresh);
+
+// WebAuthn routes
+router.post('/authn/request-login', requestLoginWithAuthn);
+router.post('/authn/login', loginWithAuthn);
 
 export default router;

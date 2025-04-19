@@ -1,68 +1,145 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import User from '../models/userModel.js';
+import User from '../models/User.js';
 import {createWorkspace} from './workspaceController.js';
 import {sendWelcomeNotification} from '../services/knock.js';
+import 'dotenv/config';
+
+// Security constants
+const TOKEN_EXPIRY = {
+    access: 60 * 60 * 1000, // 1 hour
+    refresh: 30 * 24 * 60 * 60 * 1000, // 30 days
+};
+
+// Helper function for consistent error responses
+const errorResponse = (res, status, message) => {
+    return res.status(status).json({
+        error: message,
+        success: false,
+    });
+};
+
+// Helper function for successful responses
+const successResponse = (res, data) => {
+    return res.json({
+        success: true,
+        ...data,
+    });
+};
 
 export const register = async (req, res) => {
     try {
-        if (!req.body.name || !req.body.email || !req.body.password) {
-            return res.status(400).json({error: 'Missing required fields'});
+        // Input validation
+        if (!req.body.firstName || !req.body.lastName || !req.body.email || !req.body.password || !req.body.username) {
+            return errorResponse(res, 400, 'Missing required fields');
         }
 
-        const {name, email, password} = req.body;
-        const [firstName, lastName] = name.split(' ');
+        const firstName = req.sanitize(req.body.firstName);
+        const lastName = req.sanitize(req.body.lastName);
+        const email = req.body.email.toLowerCase();
+        const password = req.body.password;
+        const username = req.sanitize(req.body.username);
 
-        const user = new User({firstName, lastName, email, password});
-        const savedUser = await user.save();
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return errorResponse(res, 400, 'Invalid email format');
+        }
+
+        // Validate password strength
+        if (password.length < 8) {
+            return errorResponse(res, 400, 'Password must be at least 8 characters long');
+        }
+
+        // Validate username format (alphanumeric and underscores only)
+        const usernameRegex = /^[a-zA-Z0-9_]+$/;
+        if (!usernameRegex.test(username)) {
+            return errorResponse(res, 400, 'Username can only contain letters, numbers, and underscores');
+        }
+
+        const user = new User({
+            firstName,
+            lastName,
+            email,
+            password,
+            username,
+        });
+
+        let savedUser;
+        try {
+            savedUser = await user.save();
+        } catch (error) {
+            if (error.message.includes('already exists')) {
+                return errorResponse(res, 409, 'An account with this email already exists');
+            }
+            throw error; // Re-throw other errors to be caught by the outer try-catch
+        }
+
         const access = await user.generateAccessToken();
         const refresh = await user.generateRefreshToken();
+
         // Create a workspace for the user
         const workspacePayload = {
             title: `${firstName}'s Workspace`,
             description: `This is ${firstName}'s workspace`,
             slug: `${firstName.toLowerCase()}workspace`,
-            user: savedUser._id,
+            userId: savedUser.id,
         };
+
         const workspace = await createWorkspace(workspacePayload, 'new-user');
-        savedUser.workspace = workspace._id;
+        savedUser.workspaceId = workspace.id;
 
         // Send welcome email
         await sendWelcomeNotification(savedUser);
-        res.status(201).json({success: true, user: savedUser, accessToken: {
-            token: access,
-            expires: new Date(Date.now() + 60 * 60 * 1000),
-        }, refreshToken: {
-            token: refresh,
-            expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        }});
+
+        return successResponse(res, {
+            user: savedUser,
+            accessToken: {
+                token: access,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+            },
+            refreshToken: {
+                token: refresh,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+            },
+        });
     } catch (error) {
+        console.error('Registration error:', error);
         if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).map((err) => {
-                return err.message;
-            });
-            return res.status(400).json({error: errors});
+            const errors = Object.values(error.errors).map((err) => err.message);
+            return errorResponse(res, 400, errors);
         }
-        res.status(500).json({error: error.message, success: false});
+        return errorResponse(res, 500, 'Registration failed');
     }
 };
 
 export const login = async (req, res) => {
     try {
         const {email, password} = req.body;
-        const user = await User.findByCredentials(email, password);
+
+        // Input validation
+        if (!email || !password) {
+            return errorResponse(res, 400, 'Email and password are required');
+        }
+
+        const user = await User.findByCredentials(email.toLowerCase(), password);
         const access = await user.generateAccessToken();
         const refresh = await user.generateRefreshToken();
 
-        res.json({success: true, user, accessToken: {
-            token: access,
-            expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        }, refreshToken: {
-            token: refresh,
-            expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        }});
+        return successResponse(res, {
+            user,
+            accessToken: {
+                token: access,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+            },
+            refreshToken: {
+                token: refresh,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+            },
+        });
     } catch (error) {
-        res.status(500).json({error: error.message});
+        console.error('Login error:', error);
+        return errorResponse(res, 401, 'Invalid email or password');
     }
 };
 
@@ -71,12 +148,12 @@ export const logout = async (req, res) => {
         const user = req.user;
         user.token = '';
         await user.save();
-        res.json({success: true});
+        return successResponse(res, {message: 'Logged out successfully'});
     } catch (error) {
-        res.status(500).json({error: error.message});
+        console.error('Logout error:', error);
+        return errorResponse(res, 500, 'Logout failed');
     }
 };
-
 
 export const refresh = async (req, res) => {
     try {
@@ -84,7 +161,7 @@ export const refresh = async (req, res) => {
         const header = req.header('Authorization');
 
         if (!token || !header) {
-            return res.status(401).json({error: '1You are not authorized'});
+            return errorResponse(res, 401, 'Missing authentication tokens');
         }
 
         const accessToken = header.split(' ')[1];
@@ -94,92 +171,134 @@ export const refresh = async (req, res) => {
             process.env.ACCESS_TOKEN_SECRET,
             {ignoreExpiration: true},
         );
+
         const expiredTokenHash = crypto
             .createHash('sha256')
             .update(accessToken)
             .digest('hex');
 
         const decodedRefreshToken = jwt.verify(
-            token, process.env.REFRESH_TOKEN_SECRET,
+            token,
+            process.env.REFRESH_TOKEN_SECRET,
         );
 
         if (expiredAccessToken.id !== decodedRefreshToken.id) {
-            return res.status(401).json({error: '2You are not authorized'});
+            return errorResponse(res, 401, 'Token mismatch');
         }
 
-        const user = await User.findOne({_id: decodedRefreshToken.id});
+        const user = await User.findByPk(decodedRefreshToken.id);
 
         if (!user) {
-            return res.status(401).json({error: '3You are not authorized'});
+            return errorResponse(res, 401, 'User not found');
         }
 
         if (user.token !== expiredTokenHash) {
-            return res.status(401).json({error: '4You are not authorized'});
+            return errorResponse(res, 401, 'Invalid token');
         }
 
         const access = await user.generateAccessToken();
         const refresh = await user.generateRefreshToken();
 
-        res.json({success: true, accessToken: {
-            token: access,
-            expires: new Date(Date.now() + 60 * 60 * 1000),
-        }, refreshToken: {
-            token: refresh,
-            expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        }});
+        return successResponse(res, {
+            accessToken: {
+                token: access,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+            },
+            refreshToken: {
+                token: refresh,
+                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+            },
+        });
     } catch (error) {
-        res.status(500).json({error: error.message});
+        console.error('Token refresh error:', error);
+        return errorResponse(res, 401, 'Token refresh failed');
     }
 };
 
 export const getUser = async (req, res) => {
     try {
-        const user = await User.findOne({_id: req.user._id});
+        const user = await User.findByPk(req.user.id);
         if (!user) {
-            return res.status(404).json({error: 'User not found'});
+            return errorResponse(res, 404, 'User not found');
         }
-        res.json({success: true, user});
+        return successResponse(res, {user});
     } catch (error) {
-        res.status(500).json({error: 'User not found'});
+        console.error('Get user error:', error);
+        return errorResponse(res, 500, 'Failed to fetch user');
     }
 };
 
 export const editUser = async (req, res) => {
     try {
-        const user = await User.findOne({username: req.params.username});
+        const user = await User.findByPk(req.user.id);
         if (!user) {
-            return res.status(404).json({error: 'User not found'});
+            return errorResponse(res, 404, 'User not found');
         }
 
-        const {username, name, password} = req.body;
+        const username = req.sanitize(req.body.username);
+        const firstName = req.sanitize(req.body.firstName);
+        const lastName = req.sanitize(req.body.lastName);
+        const password = req.body.password;
+
+        // Input validation
+        if (!username || !firstName || !lastName) {
+            return errorResponse(res, 400, 'Username, first name, and last name are required');
+        }
+
+        // Check username uniqueness
         if (username !== user.username) {
-            const usernameExists = await User.findOne({username});
+            const usernameExists = await User.findOne({where: {username}});
             if (usernameExists) {
-                return res.status(400).json({error: 'Username already exists'});
+                return errorResponse(res, 400, 'Username already exists');
             }
         }
-        if (password) user.password = password;
-        const [firstName, lastName] = name.split(' ');
+
+        // Update user fields
+        if (password) {
+            if (password.length < 8) {
+                return errorResponse(res, 400, 'Password must be at least 8 characters long');
+            }
+            user.password = password;
+        }
+
         user.firstName = firstName;
         user.lastName = lastName;
         user.username = username;
+
         await user.save();
-        res.json({success: true, user});
+        return successResponse(res, {user});
     } catch (error) {
-        res.status(500).json({error: 'User not found', success: false});
+        console.error('Edit user error:', error);
+        return errorResponse(res, 500, 'Failed to update user');
     }
 };
 
 export const updateProfilePicture = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id);
+        const user = await User.findByPk(req.user.id);
         if (!user) {
-            return res.status(404).json({error: 'User not found'});
+            return errorResponse(res, 404, 'User not found');
         }
-        user.profile_picture = req.body.profile_picture;
+
+        // Input validation
+        if (!req.body.profile_picture) {
+            return errorResponse(res, 400, 'Profile picture URL is required');
+        }
+
+        // Validate URL format
+        try {
+            new URL(req.body.profile_picture);
+        } catch (e) {
+            return errorResponse(res, 400, 'Invalid profile picture URL');
+        }
+
+        user.profilePicture = req.sanitize(req.body.profile_picture);
         await user.save();
-        res.json({success: true});
+
+        return successResponse(res, {message: 'Profile picture updated successfully'});
     } catch (error) {
-        res.status(500).json({error: 'User not found', success: false});
+        console.error('Update profile picture error:', error);
+        return errorResponse(res, 500, 'Failed to update profile picture');
     }
 };
+

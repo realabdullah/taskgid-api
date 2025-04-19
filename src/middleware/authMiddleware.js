@@ -2,7 +2,7 @@
 
 import jwt from 'jsonwebtoken';
 import 'dotenv/config';
-import User from '../models/userModel.js';
+import User from '../models/User.js';
 import crypto from 'crypto';
 
 async function authMiddleware(req, res, next) {
@@ -17,7 +17,7 @@ async function authMiddleware(req, res, next) {
     const token = authHeader.split(' ')[1];
     try {
         const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        const user = await User.findById(decodedToken.id);
+        const user = await User.findByPk(decodedToken.id);
         if (!user) {
             return res.status(401).json({
                 message: 'Invalid access token',

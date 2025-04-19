@@ -1,54 +1,79 @@
 /* eslint-disable require-jsdoc */
-import Task from '../models/taskModel.js';
-import User from '../models/userModel.js';
-import Workspace from '../models/workspaceModel.js';
+import Task from '../models/Task.js';
+import User from '../models/User.js';
+import {Workspace} from '../models/Workspace.js';
+import 'dotenv/config';
+import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 
 const getAssignee = async (assignee) => {
-    const userQuery = {username: assignee};
-    const user = await User.findOne(userQuery);
-    return user ? user._id : null;
+    const user = await User.findOne({where: {username: assignee}});
+    return user ? user.id : null;
 };
 
 export const addTask = async (req, res) => {
     try {
-        const {slug} = req.params;
-        const assignee = await getAssignee(req.body.assignee);
-        const workspace = await Workspace.findOne({slug});
+        const {title, description, status, priority, dueDate, assignee, workspaceId} = req.body;
+        const assigneeId = await getAssignee(assignee);
 
-        const newTask = new Task({
-            ...req.body,
-            user: req.user._id,
-            workspace: workspace._id,
-            assignee,
+        const task = await Task.create({
+            title,
+            description,
+            status,
+            priority,
+            dueDate,
+            assigneeId,
+            userId: req.user.id,
+            workspaceId,
         });
-        const savedTask = await newTask.save();
 
-        const populatedTask = await Task.findById(savedTask._id)
-            .populate('assignee', 'username')
-            .populate('user', 'firstName lastName username')
-            .populate('workspace', 'slug');
-        res.status(201).json({success: true, task: populatedTask});
+        const populatedTask = await Task.findByPk(task.id, {
+            include: [
+                {model: User, as: 'assignee', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'user', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+            ],
+        });
+
+        res.status(201).json(populatedTask);
     } catch (error) {
-        res.status(400).json({success: false, error: error.message});
+        res.status(400).json({error: error.message});
     }
 };
 
-
 export const updateTask = async (req, res) => {
     try {
-        const {slug, id} = req.params;
-        req.body.assignee = await getAssignee(req.body.assignee);
-        const workspace = await Workspace.findOne({slug});
-        const task = await Task.findOneAndUpdate({
-            user: req.user._id,
-            _id: id,
-            workspace: workspace._id,
-        }, req.body, {new: true})
-            .populate('assignee', 'username')
-            .populate('user', 'firstName lastName username')
-            .populate('workspace', 'slug');
-        if (!task) throw new Error('Task not found');
-        res.json({success: true, task});
+        const {id} = req.params;
+        const {title, description, status, priority, dueDate, assignee, workspaceId} = req.body;
+        const assigneeId = await getAssignee(assignee);
+
+        const task = await Task.findOne({
+            where: {
+                id,
+                userId: req.user.id,
+                workspaceId,
+            },
+        });
+
+        if (!task) {
+            return res.status(404).json({error: 'Task not found'});
+        }
+
+        await task.update({
+            title,
+            description,
+            status,
+            priority,
+            dueDate,
+            assigneeId,
+        });
+
+        const updatedTask = await Task.findByPk(task.id, {
+            include: [
+                {model: User, as: 'assignee', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'user', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+            ],
+        });
+
+        res.json(updatedTask);
     } catch (error) {
         res.status(400).json({error: error.message});
     }
@@ -56,17 +81,39 @@ export const updateTask = async (req, res) => {
 
 export const fetchWorkspaceTask = async (req, res) => {
     try {
-        const {id, slug} = req.params;
-        const workspace = await Workspace.findOne({slug});
+        const {id} = req.params;
+        const {workspaceId} = req.query;
+
+        const workspace = await Workspace.findByPk(workspaceId, {
+            include: [{model: User, as: 'user'}],
+        });
+
+        if (!workspace) {
+            return res.status(404).json({error: 'Workspace not found'});
+        }
+
+        const user = await User.findByPk(req.user.id);
+        if (workspace.userId !== user.id) {
+            return res.status(403).json({error: 'Not authorized to access this workspace'});
+        }
+
         const task = await Task.findOne({
-            user: req.user._id,
-            _id: id,
-            workspace: workspace._id,
-        }).populate('assignee', 'username')
-            .populate('user', 'firstName lastName username')
-            .populate('workspace', 'slug');
-        if (!task) throw new Error('Task not found');
-        res.json({success: true, task});
+            where: {
+                id,
+                userId: user.id,
+                workspaceId,
+            },
+            include: [
+                {model: User, as: 'assignee', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'user', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+            ],
+        });
+
+        if (!task) {
+            return res.status(404).json({error: 'Task not found'});
+        }
+
+        res.json(task);
     } catch (error) {
         res.status(400).json({error: error.message});
     }
@@ -74,35 +121,55 @@ export const fetchWorkspaceTask = async (req, res) => {
 
 export const deleteTask = async (req, res) => {
     try {
-        const {slug, id} = req.params;
-        const user = req.user;
-        const workspace = await Workspace.findOne({slug});
-        if (workspace.user.toString() !== user._id.toString()) {
-            throw new Error('You are not authorized to perform this action');
-        }
-        const task = await Task.findOneAndDelete({
-            user: user._id,
-            _id: id,
-            workspace: workspace._id,
+        const {id} = req.params;
+        const {workspaceId} = req.query;
+
+        const task = await Task.findOne({
+            where: {
+                id,
+                userId: req.user.id,
+                workspaceId,
+            },
         });
-        if (!task) throw new Error('Task not found');
-        res.json({success: true});
+
+        if (!task) {
+            return res.status(404).json({error: 'Task not found'});
+        }
+
+        await task.destroy();
+        res.json({message: 'Task deleted successfully'});
     } catch (error) {
-        res.status(400).json({success: false, error: error.message});
+        res.status(400).json({error: error.message});
     }
 };
 
 export const fetchWorkspaceTasks = async (req, res) => {
     try {
         const {slug} = req.params;
-        const workspace = await Workspace.findOne({slug});
-        const tasks = await Task.find({
-            workspace: workspace._id,
-        }).populate('assignee', 'username')
-            .populate('user', 'firstName lastName username')
-            .populate('workspace', 'slug');
-        res.json({success: true, tasks});
+        const {page, limit, offset} = getPaginationParams(req.query);
+
+        const workspace = await Workspace.findOne({
+            where: {slug},
+        });
+
+        if (!workspace) {
+            return res.status(404).json({error: 'Workspace not found', success: false});
+        }
+
+        const {count, rows: tasks} = await Task.findAndCountAll({
+            where: {workspaceId: workspace.id},
+            include: [
+                {model: User, as: 'assignee', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'user', attributes: ['username', 'firstName', 'lastName', 'profilePicture']},
+            ],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        const response = createPaginatedResponse(tasks, count, page, limit, 'tasks');
+        res.json(response);
     } catch (error) {
-        res.status(400).json({success: false, error: error.message});
+        res.status(400).json({error: error.message, success: false});
     }
 };
