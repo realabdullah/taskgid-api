@@ -15,10 +15,11 @@ export const getWorkspaces = async (req, res) => {
     try {
         const {count, rows: workspaces} = await Workspace.findAndCountAll({
             include: [{
-                model: WorkspaceTeam,
-                as: 'teamMembership',
-                where: {userId: req.user.id},
+                model: User,
+                as: 'team',
+                where: {id: req.user.id},
                 attributes: [],
+                through: {attributes: []},
             }],
             limit,
             offset,

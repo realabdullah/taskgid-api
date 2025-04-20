@@ -18,11 +18,11 @@ export const validateWorkspaceInput = [
             'Slug can only contain lowercase letters, numbers, and hyphens',
         ),
 
-    // Validate name
-    body('name')
+    // Validate title
+    body('title')
         .trim()
         .isLength({min: 1, max: 100})
-        .withMessage('Name must be between 1 and 100 characters'),
+        .withMessage('Title must be between 1 and 100 characters'),
 
     // Validate description (optional)
     body('description')

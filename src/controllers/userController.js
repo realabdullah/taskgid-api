@@ -1,94 +1,104 @@
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import User from '../models/User.js';
+import {Workspace} from '../models/Workspace.js';
+import WorkspaceTeam from '../models/WorkspaceTeam.js';
+import Auth from '../utils/auth.js';
 import 'dotenv/config';
 import emailService from '../utils/emailService.js';
 
-// Security constants
-const TOKEN_EXPIRY = {
-    access: 60 * 60 * 1000, // 1 hour
-    refresh: 30 * 24 * 60 * 60 * 1000, // 30 days
-};
-
-// Helper function for consistent error responses
-const errorResponse = (res, status, message) => {
-    return res.status(status).json({
-        error: message,
-        success: false,
-    });
-};
-
-// Helper function for successful responses
-const successResponse = (res, data) => {
-    return res.json({
-        success: true,
-        ...data,
-    });
-};
+// Define response helpers locally
+const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
+const successResponse = (res, data, statusCode = 200) => res.status(statusCode).json({...data, success: true});
 
 export const register = async (req, res) => {
     try {
-        // Input validation
-        if (!req.body.firstName || !req.body.lastName || !req.body.email || !req.body.password || !req.body.username) {
-            return errorResponse(res, 400, 'Missing required fields');
+        const {email, password, firstName, lastName, username} = req.body;
+
+        // Input validation (using corrected logic from previous attempts)
+        if (!email || !password || !firstName || !lastName || !username) {
+            return errorResponse(
+                res,
+                400,
+                'Email, password, first name, last name, and username are required',
+            );
         }
-
-        const firstName = req.sanitize(req.body.firstName);
-        const lastName = req.sanitize(req.body.lastName);
-        const email = req.body.email.toLowerCase();
-        const password = req.body.password;
-        const username = req.sanitize(req.body.username);
-
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
+        if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
             return errorResponse(res, 400, 'Invalid email format');
         }
-
-        // Validate password strength
         if (password.length < 8) {
-            return errorResponse(res, 400, 'Password must be at least 8 characters long');
+            return errorResponse(
+                res,
+                400,
+                'Password must be at least 8 characters long',
+            );
         }
-
-        // Validate username format (alphanumeric and underscores only)
-        const usernameRegex = /^[a-zA-Z0-9_]+$/;
+        const usernameRegex = /^[a-zA-Z0-9_]+$/; // Keep username validation
         if (!usernameRegex.test(username)) {
             return errorResponse(res, 400, 'Username can only contain letters, numbers, and underscores');
         }
 
+        // Sanitize inputs (assuming middleware might not cover all)
+        const sanitizedEmail = req.sanitize(email).toLowerCase();
+        const sanitizedFirstName = req.sanitize(firstName);
+        const sanitizedLastName = req.sanitize(lastName);
+        const sanitizedUsername = req.sanitize(username);
+
         const user = await User.create({
-            firstName,
-            lastName,
-            email,
-            password,
-            username,
-            registrationSource: 'self',
+            email: sanitizedEmail,
+            password, // Password hashing is handled by the User model hook
+            firstName: sanitizedFirstName,
+            lastName: sanitizedLastName,
+            username: sanitizedUsername,
+            // registrationSource: 'self', // Removed if not needed
         });
 
-        // Send welcome email
-        await emailService.sendWelcomeEmail(user);
+        // Create default workspace for the user
+        const defaultWorkspace = await Workspace.create({
+            name: `${user.firstName}'s Workspace`,
+            ownerId: user.id,
+        });
 
-        const access = await user.generateAccessToken();
-        const refresh = await user.generateRefreshToken();
+        // Add user to the default workspace team as creator
+        await WorkspaceTeam.create({
+            workspaceId: defaultWorkspace.id,
+            userId: user.id,
+            role: 'creator',
+        });
 
+        // Send welcome email (Optional: keep or remove based on preference)
+        try {
+            await emailService.sendWelcomeEmail(user);
+        } catch (emailError) {
+            console.error('Failed to send welcome email:', emailError);
+            // Decide if this should be a fatal error or just logged
+        }
+
+
+        // Generate tokens using the Auth utility
+        const tokens = await Auth.generateTokenPair(user);
+
+        // Set refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
+
+        // Send response (excluding refresh token from body)
         return successResponse(res, {
-            user,
+            user, // Send user details
             accessToken: {
-                token: access,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
-            },
-            refreshToken: {
-                token: refresh,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+                token: tokens.accessToken,
+                expiresIn: tokens.expiresIn, // Send expiration time
             },
         });
     } catch (error) {
         console.error('Registration error:', error);
-        if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).map((err) => err.message);
-            return errorResponse(res, 400, errors);
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            // More specific error message based on fields if possible
+            const field = error.errors?.[0]?.path || 'email or username';
+            return errorResponse(res, 400, `An account with this ${field} already exists.`);
         }
-        return errorResponse(res, 500, 'Registration failed');
+        if (error.name === 'ValidationError') { // Corrected validation error handling
+            const errors = Object.values(error.errors).map((err) => err.message);
+            return errorResponse(res, 400, errors.join(', '));
+        }
+        return errorResponse(res, 500, 'Registration failed due to an internal error.');
     }
 };
 
@@ -102,18 +112,17 @@ export const login = async (req, res) => {
         }
 
         const user = await User.findByCredentials(email.toLowerCase(), password);
-        const access = await user.generateAccessToken();
-        const refresh = await user.generateRefreshToken();
+
+        const tokens = await Auth.generateTokenPair(user);
 
         return successResponse(res, {
             user,
             accessToken: {
-                token: access,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+                token: tokens.accessToken,
+                expires: tokens.expiresIn,
             },
             refreshToken: {
-                token: refresh,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+                token: tokens.refreshToken,
             },
         });
     } catch (error) {
@@ -124,9 +133,11 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
     try {
-        const user = req.user;
-        user.token = '';
-        await user.save();
+        // Invalidate the refresh token on the server-side (needs implementation)
+        // e.g., await invalidateRefreshToken(req.cookies.refreshToken);
+        // For now, just clear the cookie
+        res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+        // Maybe add token to a blacklist if implementing that strategy
         return successResponse(res, {message: 'Logged out successfully'});
     } catch (error) {
         console.error('Logout error:', error);
@@ -135,64 +146,94 @@ export const logout = async (req, res) => {
 };
 
 export const refresh = async (req, res) => {
+    const oldRefreshToken = req.cookies.refreshToken;
+
+    if (!oldRefreshToken) {
+        return errorResponse(res, 401, 'Refresh token not found');
+    }
+
     try {
-        const {token} = req.body;
-        const header = req.header('Authorization');
+        // --- Refresh Token Validation Logic ---
+        // This needs to be implemented based on how you store and validate refresh tokens.
+        // Option 1: Opaque tokens stored in DB (Recommended)
+        // const storedToken = await RefreshTokenModel.findOne({ where: { token: oldRefreshToken } });
+        // if (!storedToken || storedToken.expiresAt < new Date() || storedToken.isRevoked) {
+        //     res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+        //     return errorResponse(res, 401, 'Invalid or expired refresh token');
+        // }
+        // const userId = storedToken.userId;
 
-        if (!token || !header) {
-            return errorResponse(res, 401, 'Missing authentication tokens');
+        // Option 2: JWT Refresh Tokens (Less common for long-lived tokens, requires separate secret)
+        // let decoded;
+        // try {
+        //     decoded = jwt.verify(oldRefreshToken, config.jwt.refreshSecret); // Use a dedicated refresh secret
+        // } catch (err) {
+        //     res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+        //     return errorResponse(res, 401, 'Invalid or expired refresh token');
+        // }
+        // const userId = decoded.id;
+        // --- End Validation Logic Placeholder ---
+
+        // Placeholder: Assume validation passed and userId is extracted
+        // Replace this with actual validation logic from above
+        const userId = await getUserIdFromRefreshToken(oldRefreshToken); // Needs implementation
+        if (!userId) {
+            res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+            return errorResponse(res, 401, 'Invalid refresh token');
         }
 
-        const accessToken = header.split(' ')[1];
 
-        const expiredAccessToken = jwt.verify(
-            accessToken,
-            process.env.ACCESS_TOKEN_SECRET,
-            {ignoreExpiration: true},
-        );
-
-        const expiredTokenHash = crypto
-            .createHash('sha256')
-            .update(accessToken)
-            .digest('hex');
-
-        const decodedRefreshToken = jwt.verify(
-            token,
-            process.env.REFRESH_TOKEN_SECRET,
-        );
-
-        if (expiredAccessToken.id !== decodedRefreshToken.id) {
-            return errorResponse(res, 401, 'Token mismatch');
-        }
-
-        const user = await User.findByPk(decodedRefreshToken.id);
-
+        const user = await User.findByPk(userId);
         if (!user) {
-            return errorResponse(res, 401, 'User not found');
+            res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+            return errorResponse(res, 401, 'User not found for this token');
         }
 
-        if (user.token !== expiredTokenHash) {
-            return errorResponse(res, 401, 'Invalid token');
-        }
+        // Generate new token pair
+        const tokens = await Auth.generateTokenPair(user);
 
-        const access = await user.generateAccessToken();
-        const refresh = await user.generateRefreshToken();
+        // --- Refresh Token Rotation (Optional but Recommended) ---
+        // Invalidate the old refresh token and store the new one
+        // await invalidateRefreshToken(oldRefreshToken);
+        // await storeNewRefreshToken(tokens.refreshToken, user.id);
+        // --- End Rotation Placeholder ---
 
+        // Set the new refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
+
+        // Send the new access token
         return successResponse(res, {
             accessToken: {
-                token: access,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
-            },
-            refreshToken: {
-                token: refresh,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
+                token: tokens.accessToken,
+                expiresIn: tokens.expiresIn,
             },
         });
     } catch (error) {
         console.error('Token refresh error:', error);
-        return errorResponse(res, 401, 'Token refresh failed');
+        // Clear the potentially invalid refresh token cookie as a precaution
+        res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
+        // Differentiate between validation errors and other errors
+        if (error.message.includes('Invalid') || error.message.includes('expired')) {
+            return errorResponse(res, 401, 'Token refresh failed: ' + error.message);
+        }
+        return errorResponse(res, 500, 'Token refresh failed due to an internal error.');
     }
 };
+
+/**
+ * Placeholder function to retrieve user ID associated with a refresh token.
+ * Replace this with your actual refresh token validation and retrieval logic.
+ * @param {string} token - The refresh token string.
+ * @return {Promise<string|null>} The user ID if found, otherwise null.
+ */
+async function getUserIdFromRefreshToken(token) {
+    // Example: Find user based on a stored opaque token
+    // const storedToken = await RefreshTokenModel.findOne({ where: { token: token } });
+    // return storedToken ? storedToken.userId : null;
+    console.warn('getUserIdFromRefreshToken needs actual implementation! Token received:', token);
+    // For now, return a placeholder or null, depending on how you want to handle it during development
+    return null; // Return null until implemented
+}
 
 export const getUser = async (req, res) => {
     try {

@@ -35,10 +35,7 @@ TaskGid API is a task management application built with Node.js, Express, and Po
 
    # JWT
    JWT_SECRET=your_jwt_secret
-   ACCESS_TOKEN_SECRET=your_access_token_secret
-   REFRESH_TOKEN_SECRET=your_refresh_token_secret
    ACCESS_TOKEN_EXPIRY=1h
-   REFRESH_TOKEN_EXPIRY=30d
 
    # WebAuthn
    RPNAME=TaskGid

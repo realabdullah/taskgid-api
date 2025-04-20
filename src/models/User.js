@@ -1,22 +1,7 @@
 import {DataTypes, Model} from 'sequelize';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import sequelize from '../config/database.js';
-import 'dotenv/config';
-
-// Token configuration
-const ACCESS_TOKEN = {
-    secret: process.env.ACCESS_TOKEN_SECRET,
-    expiry: process.env.ACCESS_TOKEN_EXPIRY || '1h',
-};
-const REFRESH_TOKEN = {
-    secret: process.env.REFRESH_TOKEN_SECRET,
-    expiry: process.env.REFRESH_TOKEN_EXPIRY || '30d',
-};
-const RESET_PASSWORD_TOKEN = {
-    expiry: process.env.RESET_PASSWORD_TOKEN_EXPIRY || 60, // minutes
-};
 
 /**
  * User model representing application users
@@ -24,54 +9,16 @@ const RESET_PASSWORD_TOKEN = {
  */
 class User extends Model {
     /**
-     * Generate an access token for the user
-     * @return {Promise<string>} The generated access token
-     */
-    async generateAccessToken() {
-        const token = jwt.sign({id: this.id}, ACCESS_TOKEN.secret, {
-            expiresIn: ACCESS_TOKEN.expiry,
-        });
-
-        const accessTokenHash = crypto
-            .createHash('sha256')
-            .update(token)
-            .digest('hex');
-
-        this.token = accessTokenHash;
-        await this.save();
-
-        return token;
-    }
-
-    /**
-     * Generate a refresh token for the user
-     * @return {Promise<string>} The generated refresh token
-     */
-    async generateRefreshToken() {
-        return jwt.sign({id: this.id}, REFRESH_TOKEN.secret, {
-            expiresIn: REFRESH_TOKEN.expiry,
-        });
-    }
-
-    /**
      * Generate a password reset token for the user
      * @return {Promise<string>} The generated reset token
      */
     async generateResetPasswordToken() {
-        const token = crypto.randomBytes(20).toString('base64url');
-        const secret = crypto.randomBytes(10).toString('hex');
-
-        const resetToken = `${token}.${secret}`;
-        const resetTokenHash = crypto
-            .createHmac('sha256', secret)
-            .update(token)
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        this.resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(resetToken)
             .digest('hex');
-
-        this.resetPasswordToken = resetTokenHash;
-        this.resetPasswordExpires = new Date(Date.now() + RESET_PASSWORD_TOKEN.expiry * 60 * 1000);
-
-        await this.save();
-
+        this.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // Token expires in 10 minutes
         return resetToken;
     }
 
@@ -85,12 +32,12 @@ class User extends Model {
     static async findByCredentials(email, password) {
         const user = await this.findOne({where: {email}});
         if (!user) {
-            throw new Error('Invalid email or password');
+            throw new Error('Invalid login credentials');
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            throw new Error('Invalid email or password');
+            throw new Error('Invalid login credentials');
         }
 
         return user;
@@ -103,7 +50,6 @@ class User extends Model {
     toJSON() {
         const values = {...this.get()};
         delete values.password;
-        delete values.token;
         delete values.resetPasswordToken;
         delete values.resetPasswordExpires;
         delete values.challenge;
@@ -147,10 +93,6 @@ User.init(
         password: {
             type: DataTypes.STRING,
             allowNull: false,
-        },
-        token: {
-            type: DataTypes.STRING,
-            allowNull: true,
         },
         resetPasswordToken: {
             type: DataTypes.STRING,

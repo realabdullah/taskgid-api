@@ -22,8 +22,13 @@ User.hasMany(Authn, {foreignKey: 'userId', as: 'authns'});
 // Workspace associations
 Workspace.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 Workspace.belongsToMany(User, {through: WorkspaceTeam, as: 'team'});
+Workspace.hasMany(WorkspaceTeam, {foreignKey: 'workspaceId', as: 'teamMembership'});
 Workspace.hasMany(Task, {foreignKey: 'workspaceId', as: 'tasks'});
 Workspace.hasMany(Invite, {foreignKey: 'workspaceId', as: 'invites'});
+
+// WorkspaceTeam associations
+WorkspaceTeam.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+WorkspaceTeam.belongsTo(User, {foreignKey: 'userId', as: 'memberDetail'});
 
 // Task associations
 Task.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});

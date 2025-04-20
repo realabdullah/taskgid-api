@@ -9,14 +9,11 @@ import Authn from '../models/Authn.js';
 import User from '../models/User.js';
 import rateLimit from 'express-rate-limit';
 import 'dotenv/config';
+import Auth from '../utils/auth.js';
 
 // Security constants
 const MAX_DEVICES_PER_USER = 5;
 const CHALLENGE_TIMEOUT = 60000; // 1 minute
-const TOKEN_EXPIRY = {
-    access: 60 * 60 * 1000, // 1 hour
-    refresh: 30 * 24 * 60 * 60 * 1000, // 30 days
-};
 
 // Rate limiting configuration
 export const authLimiter = rateLimit({
@@ -36,21 +33,8 @@ if (!rpName || !rpId || !rpOrigin) {
     throw new Error('Missing required environment variables for WebAuthn configuration');
 }
 
-// Helper function for consistent error responses
-const errorResponse = (res, status, message) => {
-    return res.status(status).json({
-        error: message,
-        success: false,
-    });
-};
-
-// Helper function for successful responses
-const successResponse = (res, data) => {
-    return res.json({
-        success: true,
-        ...data,
-    });
-};
+// Helper for standardized error responses
+const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
 
 export const generateRegistrationOptionsWithAuthn = async (req, res) => {
     try {
@@ -108,6 +92,12 @@ export const verifyAuthnResponse = async (req, res) => {
             return errorResponse(res, 400, 'Missing required fields');
         }
 
+        // Retrieve user and verify challenge before verification
+        const user = await User.findByPk(req.user.id);
+        if (!user) {
+            return errorResponse(res, 404, 'User not found');
+        }
+
         // Verify the credential
         const verification = await verifyRegistrationResponse({
             credential,
@@ -121,11 +111,6 @@ export const verifyAuthnResponse = async (req, res) => {
         }
 
         // Save the credential
-        const user = await User.findByPk(req.user.id);
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
-
         await Authn.create({
             credentialID: isoBase64URL.fromBuffer(verification.registrationInfo.credentialID),
             credentialPublicKey: isoBase64URL.fromBuffer(verification.registrationInfo.credentialPublicKey),
@@ -135,20 +120,25 @@ export const verifyAuthnResponse = async (req, res) => {
             userId: user.id,
         });
 
-        // Generate tokens
-        const access = await user.generateAccessToken();
-        const refresh = await user.generateRefreshToken();
+        // Clear the challenge after successful registration
+        user.challenge = null;
+        user.challengeTimestamp = null;
+        await user.save();
 
+        // Generate tokens using Auth utility
+        const tokens = await Auth.generateTokenPair(user);
+
+        // Set refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
+
+        // Send response (excluding refresh token from body)
         return successResponse(res, {
             user,
             accessToken: {
-                token: access,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+                token: tokens.accessToken,
+                expiresIn: tokens.expiresIn,
             },
-            refreshToken: {
-                token: refresh,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
-            },
+            message: 'Authenticator registered successfully',
         });
     } catch (error) {
         console.error('Verification error:', error);
@@ -207,66 +197,75 @@ export const loginWithAuthn = async (req, res) => {
             return errorResponse(res, 400, 'Missing required fields');
         }
 
+        // Find the authenticator first to get public key and counter
+        const authn = await Authn.findOne({where: {credentialID: credential.id}});
+        if (!authn) {
+            return errorResponse(res, 400, 'Authenticator not found');
+        }
+
+        // Get the associated user
+        const user = await User.findByPk(authn.userId);
+        if (!user) {
+            return errorResponse(res, 404, 'User associated with authenticator not found');
+        }
+
+        // Verify challenge before verification
+        // if (user.challenge !== expectedChallenge) {
+        //     return errorResponse(res, 400, 'Challenge mismatch');
+        // }
+        // Optional: Check challenge timestamp
+        // if (Date.now() - user.challengeTimestamp > CHALLENGE_TIMEOUT) {
+        //     return errorResponse(res, 400, 'Challenge timed out');
+        // }
+
         // Verify the credential
         const verification = await verifyAuthenticationResponse({
             credential,
-            expectedChallenge,
+            expectedChallenge: user.challenge,
             expectedOrigin,
             expectedRPID,
             authenticator: {
-                credentialPublicKey: isoBase64URL.toBuffer(
-                    (await Authn.findOne({
-                        where: {
-                            credentialID: credential.id,
-                        },
-                    })).credentialPublicKey,
-                ),
-                credentialID: isoBase64URL.toBuffer(credential.id),
-                counter: (await Authn.findOne({
-                    where: {
-                        credentialID: credential.id,
-                    },
-                })).counter,
+                credentialPublicKey: isoBase64URL.toBuffer(authn.credentialPublicKey),
+                credentialID: isoBase64URL.toBuffer(authn.credentialID),
+                counter: authn.counter,
             },
         });
 
         if (!verification.verified) {
-            return errorResponse(res, 400, 'Verification failed');
+            return errorResponse(res, 400, 'Authentication verification failed');
         }
 
         // Update counter
-        const authn = await Authn.findOne({
-            where: {
-                credentialID: credential.id,
-            },
-        });
         authn.counter = verification.authenticationInfo.newCounter;
         await authn.save();
 
-        // Get user
-        const user = await User.findOne({where: {email: credential.response.userHandle}});
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
+        // Clear the challenge after successful login
+        user.challenge = null;
+        user.challengeTimestamp = null;
+        await user.save();
 
-        // Generate tokens
-        const access = await user.generateAccessToken();
-        const refresh = await user.generateRefreshToken();
+        // Generate tokens using Auth utility
+        const tokens = await Auth.generateTokenPair(user);
 
+        // Set refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
+
+        // Send response (excluding refresh token from body)
         return successResponse(res, {
             user,
             accessToken: {
-                token: access,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.access),
+                token: tokens.accessToken,
+                expiresIn: tokens.expiresIn,
             },
-            refreshToken: {
-                token: refresh,
-                expires: new Date(Date.now() + TOKEN_EXPIRY.refresh),
-            },
+            message: 'Login successful',
         });
     } catch (error) {
-        console.error('Authentication error:', error);
-        return errorResponse(res, 500, 'Authentication failed');
+        console.error('Login with Authn error:', error);
+        // Check for specific verification errors
+        if (error.message.includes('Verification failed') || error.message.includes('Authenticator not found')) {
+            return errorResponse(res, 401, 'Authentication failed: ' + error.message);
+        }
+        return errorResponse(res, 500, 'Login failed due to an internal error.');
     }
 };
 

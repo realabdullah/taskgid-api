@@ -11,6 +11,9 @@ import {
     promoteToAdmin,
     demoteFromAdmin,
 } from '../controllers/workspaceController.js';
+import {
+    getWorkspaceStatistics,
+} from '../controllers/statisticsController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateWorkspaceInput} from '../middleware/validationMiddleware.js';
 
@@ -36,5 +39,8 @@ router.delete('/:id/team/:userIdToRemove', removeTeamMember);
 // --- Admin Role Management (by Workspace ID & User ID) ---
 router.post('/:id/admins/:userId', promoteToAdmin);
 router.delete('/:id/admins/:userId', demoteFromAdmin);
+
+// statistics
+router.get('/:id/statistics', getWorkspaceStatistics);
 
 export default router;
