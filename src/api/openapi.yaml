@@ -261,6 +261,55 @@ components:
         user: { $ref: '#/components/schemas/User', description: "Basic uploader info (populated on GET)" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    StatusStat:
+      type: object
+      properties:
+        count: { type: integer }
+        percentage: { type: number, format: float }
+    PriorityStat:
+      type: object
+      properties:
+        count: { type: integer }
+        percentage: { type: number, format: float }
+    MemberActivityStat:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        username: { type: string }
+        firstName: { type: string }
+        lastName: { type: string, nullable: true }
+        profilePicture: { type: string, nullable: true }
+        tasksAssigned: { type: integer }
+        tasksCompleted: { type: integer }
+        tasksInProgress: { type: integer }
+    WorkspaceStatistics:
+      type: object
+      properties:
+        workspaceId: { type: string, format: uuid }
+        totalTasks: { type: integer }
+        statusBreakdown:
+          type: object
+          properties:
+            todo: { $ref: '#/components/schemas/StatusStat' }
+            in_progress: { $ref: '#/components/schemas/StatusStat' }
+            review: { $ref: '#/components/schemas/StatusStat' }
+            done: { $ref: '#/components/schemas/StatusStat' }
+        priorityBreakdown:
+          type: object
+          properties:
+            low: { $ref: '#/components/schemas/PriorityStat' }
+            medium: { $ref: '#/components/schemas/PriorityStat' }
+            high: { $ref: '#/components/schemas/PriorityStat' }
+            urgent: { $ref: '#/components/schemas/PriorityStat' }
+        overdueTasks:
+          type: object
+          properties:
+            count: { type: integer }
+            percentage: { type: number, format: float }
+        memberActivity:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberActivityStat'
   responses:
     UnauthorizedError:
       description: Unauthorized (invalid/missing token)
@@ -764,7 +813,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         '200':
           description: WebAuthn credential removed successfully
@@ -2249,5 +2297,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /workspaces/{id}/statistics:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The ID of the workspace.
+    get:
+      summary: Get workspace statistics
+      description: Retrieves computed statistics for the specified workspace, including task breakdowns and member activity. Requires the user to be a member, admin, or creator of the workspace.
+      tags: [Workspaces, Statistics]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Workspace statistics retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  statistics: { $ref: '#/components/schemas/WorkspaceStatistics' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
 
 # END OF FILE 

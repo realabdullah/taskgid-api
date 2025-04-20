@@ -581,6 +581,59 @@ POST /invites/accept
 }
 ```
 
+## Workspace Statistics
+
+### Get Workspace Statistics
+
+```
+GET /workspaces/{id}/statistics
+```
+
+**Description:** Retrieves computed statistics for the specified workspace. Requires the user to be a member, admin, or creator of the workspace.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "statistics": {
+    "workspaceId": "workspace_uuid",
+    "totalTasks": 150,
+    "statusBreakdown": {
+      "todo": { "count": 30, "percentage": 20.0 },
+      "in_progress": { "count": 60, "percentage": 40.0 },
+      "review": { "count": 15, "percentage": 10.0 },
+      "done": { "count": 45, "percentage": 30.0 }
+    },
+    "priorityBreakdown": {
+      "low": { "count": 20, "percentage": 13.3 },
+      "medium": { "count": 80, "percentage": 53.3 },
+      "high": { "count": 40, "percentage": 26.7 },
+      "urgent": { "count": 10, "percentage": 6.7 }
+    },
+    "overdueTasks": {
+      "count": 12,
+      "percentage": 8.0
+    },
+    "memberActivity": [
+      {
+        "userId": "user_uuid_1",
+        "username": "alice",
+        "firstName": "Alice",
+        "lastName": "Smith",
+        "profilePicture": "url_to_picture",
+        "tasksAssigned": 55, // Total tasks ever assigned to this user in this workspace
+        "tasksCompleted": 20, // Tasks assigned to this user that are DONE
+        "tasksInProgress": 15 // Tasks assigned to this user that are IN_PROGRESS
+      },
+      // ... other members ...
+    ]
+  }
+}
+```
+
 ## Task Management
 
 *(Endpoints follow the pattern: `/workspaces/{id}/tasks` and `/workspaces/{id}/tasks/{taskId}`)*

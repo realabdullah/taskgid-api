@@ -14,6 +14,8 @@ import task from './routes/taskRoutes.js';
 import team from './routes/teamRoutes.js';
 import invite from './routes/inviteRoutes.js';
 import attachmentRoutes from './routes/attachmentRoutes.js';
+import statisticsRoutes from './routes/statisticsRoutes.js';
+
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
 
@@ -53,5 +55,6 @@ app.use('/tasks', task);
 app.use('/teams', team);
 app.use('/invite', invite);
 app.use('/attachments', attachmentRoutes);
+app.use('/api', statisticsRoutes);
 
 app.listen(port, () => console.log(`Server is running on port ${port}`));
