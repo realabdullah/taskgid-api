@@ -4,7 +4,7 @@
 import Attachment from '../models/Attachment.js';
 import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
-import storageProvider from '../utils/storageFactory.js'; // Import the storage factory instance
+import {processAndSaveFile, getFileInfo, deleteFile} from '../utils/fileUpload.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 
 // Helper for standardized error responses
@@ -38,7 +38,7 @@ export const uploadTaskAttachment = async (req, res) => {
         }
 
         // 2. Upload file using storage provider
-        const uploadedFile = await storageProvider.upload(req.file);
+        const uploadedFile = await processAndSaveFile(req.file);
         if (!uploadedFile || !uploadedFile.url) {
             throw new Error('File upload failed via storage provider.');
         }
@@ -51,7 +51,7 @@ export const uploadTaskAttachment = async (req, res) => {
             size: uploadedFile.size || req.file.size,
             path: uploadedFile.path, // Store the path/key for deletion
             url: uploadedFile.url,
-            storageType: storageProvider.getStorageType(), // Get type from provider
+            storageType: getFileInfo(), // Get type from provider
             userId: userId,
             taskId: taskId, // Link to task
             commentId: null, // Explicitly null for task attachments
@@ -64,7 +64,7 @@ export const uploadTaskAttachment = async (req, res) => {
         if (req.file && error.name !== 'StorageUploadError') { // Avoid deleting if storage itself failed
             try {
                 const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
-                if (pathToDelete) await storageProvider.delete(pathToDelete);
+                if (pathToDelete) await deleteFile(pathToDelete);
             } catch (cleanupError) {
                 console.error('Failed to cleanup partially uploaded file:', cleanupError);
             }
@@ -103,7 +103,7 @@ export const uploadCommentAttachment = async (req, res) => {
         }
 
         // 2. Upload file
-        const uploadedFile = await storageProvider.upload(req.file);
+        const uploadedFile = await processAndSaveFile(req.file);
         if (!uploadedFile || !uploadedFile.url) {
             throw new Error('File upload failed via storage provider.');
         }
@@ -116,7 +116,7 @@ export const uploadCommentAttachment = async (req, res) => {
             size: uploadedFile.size || req.file.size,
             path: uploadedFile.path,
             url: uploadedFile.url,
-            storageType: storageProvider.getStorageType(),
+            storageType: getFileInfo(),
             userId: userId,
             taskId: null, // Explicitly null for comment attachments
             commentId: commentId, // Link to comment
@@ -129,7 +129,7 @@ export const uploadCommentAttachment = async (req, res) => {
         if (req.file && error.name !== 'StorageUploadError') {
             try {
                 const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
-                if (pathToDelete) await storageProvider.delete(pathToDelete);
+                if (pathToDelete) await deleteFile(pathToDelete);
             } catch (cleanupError) {
                 console.error('Failed to cleanup partially uploaded file:', cleanupError);
             }
@@ -180,7 +180,7 @@ export const deleteAttachment = async (req, res) => {
         }
 
         // Delete file from storage provider
-        await storageProvider.delete(attachment.path); // Use stored path/key
+        await deleteFile(attachment.path); // Use stored path/key
 
         // Delete Attachment record from DB
         await attachment.destroy();

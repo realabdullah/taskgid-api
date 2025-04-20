@@ -1,8 +1,8 @@
-import Task from './models/Task.js';
-import User from './models/User.js';
-import {Workspace} from './models/Workspace.js';
-import WorkspaceTeam from './models/WorkspaceTeam.js';
-import {getUserRoleInWorkspace} from './utils/workspaceUtils.js';
+import Task from '../models/Task.js';
+import User from '../models/User.js';
+import {Workspace} from '../models/Workspace.js';
+import WorkspaceTeam from '../models/WorkspaceTeam.js';
+import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 
 // Helper for standardized error responses
 const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});

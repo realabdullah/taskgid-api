@@ -88,10 +88,10 @@ class EmailService {
             {
                 email: user.email,
                 data: {
-                    firstName: user.firstName,
+                    name: user.firstName,
                     // Add other variables your welcome template needs, e.g.:
-                    // dashboardUrl: `${process.env.APP_URL}/dashboard`,
-                    // supportEmail: process.env.SUPPORT_EMAIL
+                    dashboardUrl: `${process.env.APP_URL}/dashboard`,
+                    supportEmail: process.env.SUPPORT_EMAIL,
                 },
             },
         ];
@@ -99,7 +99,7 @@ class EmailService {
         const emailParams = new EmailParams()
             .setFrom(this.sender)
             .setTo(recipients)
-        // .setReplyTo(this.sender) // Optional: Set if needed
+            .setReplyTo(this.sender) // Optional: Set if needed
             .setSubject('Welcome to TaskGid! 🎉') // Subject can also be set in the template
             .setTemplateId(templateId)
             .setPersonalization(personalization);
