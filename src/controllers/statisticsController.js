@@ -30,29 +30,37 @@ const calculatePercentage = (count, total) => {
  * @param {Object} res - Express response object
  */
 export const getWorkspaceStatistics = async (req, res) => {
-    const {id: workspaceId} = req.params;
+    // Use workspaceSlug from route params
+    const {slug: workspaceSlug} = req.params;
     const userId = req.user.id;
 
     try {
+        // Find workspace by slug to get its ID
+        const workspace = await Workspace.findOne({where: {slug: workspaceSlug}, attributes: ['id']});
+
+        if (!workspace) {
+            return errorResponse(res, 404, 'Workspace not found');
+        }
+
+        const workspaceId = workspace.id; // Use the retrieved workspace ID
+
         // 1. Authorization: Check if user is part of the workspace
         const role = await getUserRoleInWorkspace(userId, workspaceId);
         if (!role) {
-            const workspaceExists = await Workspace.findByPk(workspaceId, {attributes: ['id']});
-            const status = workspaceExists ? 403 : 404;
-            const message = workspaceExists ? 'Access denied' : 'Workspace not found';
-            return errorResponse(res, status, message);
+            // Workspace exists since we found it above
+            return errorResponse(res, 403, 'Access denied');
         }
 
-        // 2. Fetch all relevant tasks for the workspace
+        // 2. Fetch all relevant tasks for the workspace using workspaceId
         const tasks = await Task.findAll({
-            where: {workspaceId},
+            where: {workspaceId}, // Use workspaceId here
             attributes: ['id', 'status', 'priority', 'dueDate'],
             include: [
                 {
                     model: User,
                     as: 'assignees',
-                    attributes: ['id'], // Only need IDs for counting
-                    through: {attributes: []}, // Don't need join table attributes
+                    attributes: ['id'],
+                    through: {attributes: []},
                 },
             ],
         });
@@ -116,13 +124,13 @@ export const getWorkspaceStatistics = async (req, res) => {
 
         // 5. Fetch Member Details and Combine with Counts
         const teamMembers = await WorkspaceTeam.findAll({
-            where: {workspaceId},
+            where: {workspaceId}, // Use workspaceId here
             include: [{
                 model: User,
                 as: 'memberDetail',
-                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'], // Include necessary details
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
             }],
-            attributes: ['userId'], // Only need userId from the join table itself
+            attributes: ['userId'],
         });
 
         const memberActivity = teamMembers.map((tm) => {
@@ -142,7 +150,8 @@ export const getWorkspaceStatistics = async (req, res) => {
 
         // 6. Construct Final Response
         const statistics = {
-            workspaceId,
+            workspaceId, // Keep workspaceId in the response
+            workspaceSlug, // Include slug as well for context
             totalTasks,
             statusBreakdown: statusCounts,
             priorityBreakdown: priorityCounts,
@@ -155,7 +164,7 @@ export const getWorkspaceStatistics = async (req, res) => {
 
         res.json({success: true, statistics});
     } catch (error) {
-        console.error(`Error fetching statistics for workspace ${workspaceId}:`, error);
+        console.error(`Error fetching statistics for workspace slug ${workspaceSlug}:`, error);
         return errorResponse(res, 500, 'Failed to fetch workspace statistics.');
     }
 };

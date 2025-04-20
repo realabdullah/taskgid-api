@@ -26,21 +26,21 @@ router.use(authMiddleware);
 router.get('/', getWorkspaces);
 router.post('/', validateWorkspaceInput, addNewWorkspace);
 
-// --- Specific Workspace Operations (by ID) ---
-router.get('/:id', getWorkspace);
-router.put('/:id', validateWorkspaceInput, updateWorkspace);
-router.delete('/:id', deleteWorkspace);
+// --- Specific Workspace Operations (by Slug) ---
+router.get('/:slug', getWorkspace);
+router.put('/:slug', validateWorkspaceInput, updateWorkspace);
+router.delete('/:slug', deleteWorkspace);
 
-// --- Team Management (by Workspace ID) ---
-router.get('/:id/team', getWorkspaceTeam);
-router.post('/:id/team', addTeamMember);
-router.delete('/:id/team/:userIdToRemove', removeTeamMember);
+// --- Team Management (by Workspace Slug) ---
+router.get('/:slug/team', getWorkspaceTeam);
+router.post('/:slug/team', addTeamMember);
+router.delete('/:slug/team/:userIdToRemove', removeTeamMember);
 
-// --- Admin Role Management (by Workspace ID & User ID) ---
-router.post('/:id/admins/:userId', promoteToAdmin);
-router.delete('/:id/admins/:userId', demoteFromAdmin);
+// --- Admin Role Management (by Workspace Slug & User ID) ---
+router.post('/:slug/admins/:userId', promoteToAdmin);
+router.delete('/:slug/admins/:userId', demoteFromAdmin);
 
 // statistics
-router.get('/:id/statistics', getWorkspaceStatistics);
+router.get('/:slug/statistics', getWorkspaceStatistics);
 
 export default router;

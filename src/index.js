@@ -14,6 +14,7 @@ import task from './routes/taskRoutes.js';
 import team from './routes/teamRoutes.js';
 import invite from './routes/inviteRoutes.js';
 import attachmentRoutes from './routes/attachmentRoutes.js';
+import statisticsRoutes from './routes/statisticsRoutes.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -50,7 +51,8 @@ syncDatabase(false).catch((error) => {
 app.use('/auth', auth);
 app.use('/users', user);
 app.use('/workspaces', workspace);
-app.use('/tasks', task);
+app.use('/workspaces/:workspaceSlug/tasks', task);
+app.use('/workspaces/:workspaceSlug/statistics', statisticsRoutes);
 app.use('/teams', team);
 app.use('/invite', invite);
 app.use('/attachments', attachmentRoutes);
