@@ -27,6 +27,16 @@ Invite.init(
             allowNull: false,
             unique: true,
         },
+        invitedById: {
+            type: DataTypes.UUID,
+            allowNull: true, // Allow null if invite is system-generated or sender is unknown
+            references: {
+                model: 'users',
+                key: 'id',
+            },
+            onUpdate: 'CASCADE',
+            onDelete: 'SET NULL',
+        },
         used: {
             type: DataTypes.BOOLEAN,
             defaultValue: false,
@@ -44,6 +54,15 @@ Invite.init(
         sequelize,
         modelName: 'Invite',
         tableName: 'invites',
+        indexes: [
+            {
+                unique: true,
+                fields: ['email', 'workspaceId'],
+                where: {
+                    used: false,
+                },
+            },
+        ],
     },
 );
 

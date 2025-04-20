@@ -1,371 +1,340 @@
 /* eslint-disable require-jsdoc */
 import {Workspace} from '../models/Workspace.js';
 import User from '../models/User.js';
-import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
-import cache from '../utils/cache.js';
 import 'dotenv/config';
-import {Op} from 'sequelize';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
+import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
+import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
+
+// Helper for standardized error responses
+const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
 
 export const getWorkspaces = async (req, res) => {
+    const {page, limit, offset} = getPaginationParams(req);
+
     try {
-        const {page, limit, offset} = getPaginationParams(req.query);
-
-        // First, get all workspace IDs where the user is a team member
-        const teamWorkspaces = await WorkspaceTeam.findAll({
-            where: {userId: req.user.id},
-            attributes: ['workspaceId'],
-            raw: true,
-        });
-
-        const teamWorkspaceIds = teamWorkspaces.map((w) => w.workspaceId);
-
-        // Get workspaces where user is either the owner or a team member
         const {count, rows: workspaces} = await Workspace.findAndCountAll({
-            include: [
-                {model: User, as: 'user', attributes: ['firstName', 'lastName']},
-                {
-                    model: User,
-                    as: 'team',
-                    attributes: ['firstName', 'lastName', 'username', 'profilePicture', 'email'],
-                    through: {attributes: []},
-                },
-            ],
-            where: {
-                [Op.or]: [
-                    {userId: req.user.id}, // User is the owner
-                    {id: {[Op.in]: teamWorkspaceIds}}, // User is a team member
-                ],
-            },
-            distinct: true,
+            include: [{
+                model: WorkspaceTeam,
+                as: 'teamMembership',
+                where: {userId: req.user.id},
+                attributes: [],
+            }],
             limit,
             offset,
+            order: [['createdAt', 'DESC']],
+            distinct: true,
         });
 
-        const response = createPaginatedResponse(workspaces, count, page, limit, 'workspaces');
-        res.send(response);
+        res.json(createPaginatedResponse(workspaces, count, page, limit));
     } catch (error) {
         console.error('Error fetching workspaces:', error);
-        res.status(500).json({error: error.message, success: false});
+        return errorResponse(res, 500, 'Failed to fetch workspaces');
     }
 };
 
 export const getWorkspace = async (req, res) => {
+    const workspaceId = req.params.id;
+    const userId = req.user.id;
+
     try {
-        const {slug} = req.params;
-
-        // Check cache first
-        const cacheKey = `workspace:${slug}`;
-        const cachedWorkspace = cache.get(cacheKey);
-
-        if (cachedWorkspace) {
-            return res.json({success: true, workspace: cachedWorkspace, fromCache: true});
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            const workspaceExists = await Workspace.findByPk(workspaceId, {attributes: ['id']});
+            return errorResponse(
+                res,
+                workspaceExists ? 403 : 404,
+                workspaceExists ? 'Access denied' : 'Workspace not found',
+            );
         }
 
-        const workspace = await Workspace.findOne({
-            where: {
-                slug: slug,
-            },
+        const workspace = await Workspace.findByPk(workspaceId, {
             include: [
-                {model: User, as: 'user', attributes: ['firstName', 'lastName']},
-                {model: User, as: 'team', attributes: ['firstName', 'lastName', 'username', 'profilePicture', 'email']},
+                {model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'profilePicture']},
             ],
         });
 
         if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
+            return errorResponse(res, 404, 'Workspace not found');
         }
 
-        // Cache the workspace for 5 minutes
-        cache.set(cacheKey, workspace, 300);
-
-        res.json({success: true, workspace});
+        res.json(workspace);
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Error fetching workspace:', error);
+        return errorResponse(res, 500, 'Failed to fetch workspace');
     }
 };
 
-const getUserIds = async (team) => {
-    const userIds = [];
+export const getWorkspaceTeam = async (req, res) => {
+    const {page, limit, offset} = getPaginationParams(req);
+    const workspaceId = req.params.id;
+    const userId = req.user.id;
 
-    for (const member of team) {
-        const user = await User.findOne({where: {email: member.email}});
-        if (user) userIds.push(user.id);
+    try {
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            const workspaceExists = await Workspace.findByPk(workspaceId, {attributes: ['id']});
+            return errorResponse(
+                res,
+                workspaceExists ? 403 : 404,
+                workspaceExists ? 'Access denied' : 'Workspace not found',
+            );
+        }
+
+        const {count, rows: teamMemberships} = await WorkspaceTeam.findAndCountAll({
+            where: {workspaceId},
+            include: [{
+                model: User,
+                as: 'memberDetail',
+                attributes: ['id', 'firstName', 'lastName', 'email', 'profilePicture', 'username'],
+            }],
+            limit,
+            offset,
+            order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
+            distinct: true,
+        });
+
+        const team = teamMemberships.map((tm) => ({
+            ...(tm.memberDetail.toJSON()),
+            role: tm.role,
+        }));
+
+        res.json(createPaginatedResponse(team, count, page, limit));
+    } catch (error) {
+        console.error('Error fetching workspace team:', error);
+        return errorResponse(res, 500, 'Failed to fetch workspace team');
     }
-
-    return userIds;
 };
 
 export const updateWorkspace = async (req, res) => {
+    const workspaceId = req.params.id;
+    const userId = req.user.id;
+
     try {
-        const payload = req.body;
-        const userIds = await getUserIds(payload.team);
-        payload.team = userIds;
-
-        if (payload.slug !== req.params.slug) {
-            const slugExists = await checkIfSlugExists(payload.slug);
-            if (slugExists) {
-                return res.status(400).json({error: 'A workspace with this slug already exists', success: false});
-            }
-        }
-
-        const workspace = await Workspace.findOne({
-            where: {
-                slug: req.params.slug,
-            },
-        });
+        const workspace = await Workspace.findByPk(workspaceId);
 
         if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
+            return errorResponse(res, 404, 'Workspace not found');
         }
 
-        // Only super admin (creator) can update workspace details
-        if (workspace.userId !== req.user.id) {
-            return res.status(403).json({
-                error: 'Only the workspace creator can update workspace details',
-                success: false,
-            });
+        if (workspace.userId !== userId) {
+            return errorResponse(res, 403, 'Only the workspace creator can update workspace details');
+        }
+
+        const payload = req.body;
+
+        if (payload.slug && payload.slug !== workspace.slug) {
+            const slugExists = await Workspace.count({where: {slug: payload.slug}});
+            if (slugExists > 0) {
+                return errorResponse(res, 400, 'A workspace with this slug already exists');
+            }
         }
 
         await workspace.update(payload);
 
         const updatedWorkspace = await Workspace.findByPk(workspace.id, {
             include: [
-                {model: User, as: 'user', attributes: ['firstName', 'lastName']},
-                {model: User, as: 'team', attributes: ['firstName', 'lastName', 'username', 'profilePicture', 'email']},
+                {model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'profilePicture']},
             ],
         });
 
         res.json({success: true, workspace: updatedWorkspace});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Update workspace error:', error);
+        return errorResponse(res, 500, error.message || 'Failed to update workspace');
     }
 };
 
 export const deleteWorkspace = async (req, res) => {
+    const workspaceId = req.params.id;
+    const userId = req.user.id;
+
     try {
-        const workspace = await Workspace.findOne({
-            where: {
-                slug: req.params.slug,
-            },
-        });
+        const workspace = await Workspace.findByPk(workspaceId);
 
         if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
+            return errorResponse(res, 404, 'Workspace not found');
         }
 
-        // Only super admin (creator) can delete workspace
-        if (workspace.userId !== req.user.id) {
-            return res.status(403).json({error: 'Only the workspace creator can delete the workspace', success: false});
+        if (workspace.userId !== userId) {
+            return errorResponse(res, 403, 'Only the workspace creator can delete the workspace');
         }
 
         await workspace.destroy();
-        res.json({success: true});
+        res.json({success: true, message: 'Workspace deleted successfully'});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Delete workspace error:', error);
+        return errorResponse(res, 500, 'Failed to delete workspace');
     }
 };
 
 export const addNewWorkspace = async (req, res) => {
     try {
-        const workspace = await createWorkspace({...req.body, userId: req.user.id});
+        const payload = {...req.body, userId: req.user.id};
+
+        if (payload.slug) {
+            const slugExists = await Workspace.count({where: {slug: payload.slug}});
+            if (slugExists > 0) {
+                return errorResponse(res, 400, 'A workspace with this slug already exists');
+            }
+        } else {
+            payload.slug = payload.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            let uniqueSlug = payload.slug;
+            let counter = 1;
+            while (await Workspace.count({where: {slug: uniqueSlug}}) > 0) {
+                uniqueSlug = `${payload.slug}-${counter++}`;
+            }
+            payload.slug = uniqueSlug;
+        }
+
+        const workspace = await Workspace.create(payload);
+
+        await WorkspaceTeam.create({
+            workspaceId: workspace.id,
+            userId: req.user.id,
+            role: 'creator',
+        });
+
         const populatedWorkspace = await Workspace.findByPk(workspace.id, {
             include: [
-                {model: User, as: 'user', attributes: ['firstName', 'lastName']},
-                {model: User, as: 'team', attributes: ['firstName', 'lastName', 'username', 'profilePicture', 'email']},
+                {model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'profilePicture']},
             ],
         });
-        res.json({success: true, workspace: populatedWorkspace});
+
+        res.status(201).json({success: true, workspace: populatedWorkspace});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Add workspace error:', error);
+        return errorResponse(res, 500, error.message || 'Failed to create workspace');
     }
 };
 
-const checkIfSlugExists = async (slug) => {
-    const count = await Workspace.count({where: {slug}});
-    return count > 0;
-};
+export const addTeamMember = async (req, res) => {
+    const workspaceId = req.params.id;
+    const requestorId = req.user.id;
+    const {email} = req.body;
 
-export const createWorkspace = async (payload, usage = 'create') => {
-    const {slug} = payload;
-    const slugExists = await checkIfSlugExists(slug);
-    if (slugExists && usage === 'create') {
-        throw new Error('A workspace with this slug already exists');
-    } else if (slugExists && usage === 'new-user') {
-        let newSlug = Math.random().toString(36).substring(2, 10);
-        while (await checkIfSlugExists(newSlug)) {
-            newSlug = Math.random().toString(36).substring(2, 10);
-        }
-        payload.slug = newSlug;
-    }
-
-    const workspace = await Workspace.create(payload);
-    return workspace;
-};
-
-/**
- * Add a user as an admin to a workspace
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-export const addAdmin = async (req, res) => {
     try {
-        const {email} = req.body;
-        const workspace = await Workspace.findOne({
-            where: {slug: req.params.slug},
+        const requestorRole = await getUserRoleInWorkspace(requestorId, workspaceId);
+        if (!requestorRole || !['creator', 'admin'].includes(requestorRole)) {
+            return errorResponse(res, 403, 'Only workspace admins or the creator can add members');
+        }
+
+        const userToAdd = await User.findOne({where: {email}});
+        if (!userToAdd) {
+            return errorResponse(res, 404, 'User to add not found');
+        }
+
+        const existingRole = await getUserRoleInWorkspace(userToAdd.id, workspaceId);
+        if (existingRole) {
+            return errorResponse(res, 400, 'User is already a member of this workspace');
+        }
+
+        await WorkspaceTeam.create({
+            workspaceId,
+            userId: userToAdd.id,
+            role: 'member',
         });
 
-        if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
-        }
-
-        // Only super admin (creator) can add admins
-        if (workspace.userId !== req.user.id) {
-            return res.status(403).json({error: 'Only the workspace creator can add admins', success: false});
-        }
-
-        const user = await User.findOne({where: {email}});
-        if (!user) {
-            return res.status(404).json({error: 'User not found', success: false});
-        }
-
-        // Check if user is already a team member
-        const teamMember = await WorkspaceTeam.findOne({
-            where: {
-                workspaceId: workspace.id,
-                userId: user.id,
-            },
-        });
-
-        if (!teamMember) {
-            return res.status(400).json({error: 'User is not a member of this workspace', success: false});
-        }
-
-        // Update the user's admin status
-        await teamMember.update({isAdmin: true});
-
-        res.json({success: true, message: 'Admin added successfully'});
+        res.status(201).json({success: true, message: 'Team member added successfully'});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Add team member error:', error);
+        return errorResponse(res, 500, 'Failed to add team member');
     }
 };
 
-/**
- * Remove a user's admin status from a workspace
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-export const removeAdmin = async (req, res) => {
+export const removeTeamMember = async (req, res) => {
+    const workspaceId = req.params.id;
+    const {userIdToRemove} = req.params;
+    const requestorId = req.user.id;
+
     try {
-        const {email} = req.body;
-        const workspace = await Workspace.findOne({
-            where: {slug: req.params.slug},
+        const requestorRole = await getUserRoleInWorkspace(requestorId, workspaceId);
+        const targetRole = await getUserRoleInWorkspace(userIdToRemove, workspaceId);
+        const workspace = await Workspace.findByPk(workspaceId, {attributes: ['userId']});
+
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
+        if (!targetRole) return errorResponse(res, 404, 'Team member not found in this workspace');
+
+        if (!requestorRole || !['creator', 'admin'].includes(requestorRole)) {
+            return errorResponse(res, 403, 'Only workspace admins or the creator can remove members');
+        }
+
+        if (userIdToRemove === workspace.userId) {
+            return errorResponse(res, 400, 'Cannot remove the workspace creator');
+        }
+
+        if (requestorRole === 'admin' && targetRole === 'admin') {
+            return errorResponse(res, 403, 'Admins cannot remove other admins');
+        }
+
+        const deletedCount = await WorkspaceTeam.destroy({
+            where: {workspaceId, userId: userIdToRemove},
         });
-
-        if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
+        if (deletedCount === 0) {
+            return errorResponse(res, 404, 'Team member not found in this workspace');
         }
-
-        // Only super admin (creator) can remove admins
-        if (workspace.userId !== req.user.id) {
-            return res.status(403).json({error: 'Only the workspace creator can remove admins', success: false});
-        }
-
-        const user = await User.findOne({where: {email}});
-        if (!user) {
-            return res.status(404).json({error: 'User not found', success: false});
-        }
-
-        // Cannot remove the creator's admin status
-        if (user.id === workspace.userId) {
-            return res.status(400).json({
-                error: 'Cannot remove the workspace creator\'s admin status',
-                success: false,
-            });
-        }
-
-        // Check if user is already a team member
-        const teamMember = await WorkspaceTeam.findOne({
-            where: {
-                workspaceId: workspace.id,
-                userId: user.id,
-            },
-        });
-
-        if (!teamMember) {
-            return res.status(400).json({error: 'User is not a member of this workspace', success: false});
-        }
-
-        // Update the user's admin status
-        await teamMember.update({isAdmin: false});
-
-        res.json({success: true, message: 'Admin removed successfully'});
+        res.json({success: true, message: 'Team member removed successfully'});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Remove team member error:', error);
+        return errorResponse(res, 500, 'Failed to remove team member');
     }
 };
 
-/**
- * Remove a user from a workspace
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-export const removeUser = async (req, res) => {
+export const promoteToAdmin = async (req, res) => {
+    const workspaceId = req.params.id;
+    const {userId: targetUserId} = req.params;
+    const requestorId = req.user.id;
+
     try {
-        const {email} = req.body;
-        const workspace = await Workspace.findOne({
-            where: {slug: req.params.slug},
-        });
+        const workspace = await Workspace.findByPk(workspaceId, {attributes: ['userId']});
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
 
-        if (!workspace) {
-            return res.status(404).json({error: 'Workspace not found', success: false});
+        if (workspace.userId !== requestorId) {
+            return errorResponse(res, 403, 'Only the workspace creator can manage admin roles');
         }
 
-        // Only super admin (creator) or admins can remove users
-        if (workspace.userId !== req.user.id) {
-            const isAdmin = await WorkspaceTeam.findOne({
-                where: {
-                    workspaceId: workspace.id,
-                    userId: req.user.id,
-                    isAdmin: true,
-                },
-            });
-
-            if (!isAdmin) {
-                return res.status(403).json({
-                    error: 'You do not have permission to remove users from this workspace',
-                    success: false,
-                });
-            }
-        }
-
-        const user = await User.findOne({where: {email}});
-        if (!user) {
-            return res.status(404).json({error: 'User not found', success: false});
-        }
-
-        // Cannot remove the creator
-        if (user.id === workspace.userId) {
-            return res.status(400).json({error: 'Cannot remove the workspace creator', success: false});
-        }
-
-        // Check if user is a team member
         const teamMember = await WorkspaceTeam.findOne({
-            where: {
-                workspaceId: workspace.id,
-                userId: user.id,
-            },
+            where: {workspaceId, userId: targetUserId},
         });
+        if (!teamMember) return errorResponse(res, 404, 'User is not a member of this workspace');
+        if (teamMember.role === 'creator') return errorResponse(res, 400, 'Cannot change the creator\'s role');
+        if (teamMember.role === 'admin') return errorResponse(res, 400, 'User is already an admin');
 
-        if (!teamMember) {
-            return res.status(400).json({error: 'User is not a member of this workspace', success: false});
+        await teamMember.update({role: 'admin'});
+        res.json({success: true, message: 'Member promoted to admin successfully'});
+    } catch (error) {
+        console.error('Promote admin error:', error);
+        return errorResponse(res, 500, 'Failed to promote member to admin');
+    }
+};
+
+export const demoteFromAdmin = async (req, res) => {
+    const workspaceId = req.params.id;
+    const {userId: targetUserId} = req.params;
+    const requestorId = req.user.id;
+
+    try {
+        const workspace = await Workspace.findByPk(workspaceId, {attributes: ['userId']});
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
+
+        if (workspace.userId !== requestorId) {
+            return errorResponse(res, 403, 'Only the workspace creator can manage admin roles');
         }
 
-        // Remove the user from the workspace
-        await teamMember.destroy();
+        if (targetUserId === workspace.userId) {
+            return errorResponse(res, 400, 'Cannot change the workspace creator\'s role');
+        }
 
-        res.json({success: true, message: 'User removed from workspace successfully'});
+        const teamMember = await WorkspaceTeam.findOne({
+            where: {workspaceId, userId: targetUserId},
+        });
+        if (!teamMember) return errorResponse(res, 404, 'User is not a member of this workspace');
+        if (teamMember.role !== 'admin') return errorResponse(res, 400, 'User is not currently an admin');
+
+        await teamMember.update({role: 'member'});
+        res.json({success: true, message: 'Admin demoted to member successfully'});
     } catch (error) {
-        res.status(500).json({error: error.message, success: false});
+        console.error('Demote admin error:', error);
+        return errorResponse(res, 500, 'Failed to demote admin to member');
     }
 };

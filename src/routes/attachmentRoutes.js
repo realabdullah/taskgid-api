@@ -2,34 +2,46 @@
  * Routes for file attachments
  */
 import express from 'express';
-import auth from '../middleware/authMiddleware.js';
-import {uploadSingle, handleMulterError} from '../middleware/uploadMiddleware.js';
+import multer from 'multer';
 import {
     uploadTaskAttachment,
     uploadCommentAttachment,
+    deleteAttachment,
     getTaskAttachments,
     getCommentAttachments,
-    deleteAttachment,
 } from '../controllers/attachmentController.js';
+import authMiddleware from '../middleware/authMiddleware.js';
+// Assuming storageProvider has limitations defined, or use a general config
+// import uploadConfig from '../config/uploadConfig';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
 
-// Apply authentication middleware to all routes
-router.use(auth);
+// Configure Multer for file uploads
+// Store in memory temporarily before passing to storage provider
+// Add file size limits and potentially file type filters here
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage: storage,
+    limits: {fileSize: 10 * 1024 * 1024}, // 10MB limit example
+    // fileFilter: (req, file, cb) => { ... check mimetype ... }
+});
 
-// Task attachment routes
-router.post('/tasks/:taskId/attachments', uploadSingle('file'), uploadTaskAttachment);
-router.get('/tasks/:taskId/attachments', getTaskAttachments);
+// Middleware for all attachment routes
+router.use(authMiddleware);
 
-// Comment attachment routes
-router.post('/comments/:commentId/attachments', uploadSingle('file'), uploadCommentAttachment);
+// Get Attachments
+router.get('/tasks/:taskId/attachments', getTaskAttachments); // Needs workspace ID context implicitly via task
+// Needs workspace ID context implicitly via comment
 router.get('/comments/:commentId/attachments', getCommentAttachments);
 
-// Delete attachment
-router.delete('/attachments/:attachmentId', deleteAttachment);
+// Upload Attachments
+// The route needs workspace ID for permission checks in controller
+// We pass it as part of the URL structure common to tasks/comments
+router.post('/workspaces/:id/tasks/:taskId/attachments', upload.single('file'), uploadTaskAttachment);
+router.post('/workspaces/:id/comments/:commentId/attachments', upload.single('file'), uploadCommentAttachment);
 
-// Handle multer errors
-router.use(handleMulterError);
+// Delete Attachment (using attachment's own ID)
+router.delete('/attachments/:attachmentId', deleteAttachment);
 
 export default router;

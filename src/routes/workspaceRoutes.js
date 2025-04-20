@@ -2,44 +2,39 @@ import express from 'express';
 import {
     getWorkspaces,
     getWorkspace,
+    addNewWorkspace,
     updateWorkspace,
     deleteWorkspace,
-    addNewWorkspace,
-    addAdmin,
-    removeAdmin,
-    removeUser,
+    getWorkspaceTeam,
+    addTeamMember,
+    removeTeamMember,
+    promoteToAdmin,
+    demoteFromAdmin,
 } from '../controllers/workspaceController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
-import {
-    checkAdminMiddleware,
-    checkSuperAdminMiddleware,
-} from '../middleware/workspaceMiddleware.js';
 import {validateWorkspaceInput} from '../middleware/validationMiddleware.js';
 
 const router = new express.Router();
 
-// Apply auth middleware to all routes
+// Apply auth middleware to all workspace routes
 router.use(authMiddleware);
 
-// Public workspace routes
+// --- Workspace Listing & Creation ---
 router.get('/', getWorkspaces);
-router.get('/:slug', getWorkspace);
+router.post('/', validateWorkspaceInput, addNewWorkspace);
 
-// Admin management routes (super admin only)
-router.post('/:slug/admins', checkSuperAdminMiddleware, addAdmin);
-router.delete('/:slug/admins', checkSuperAdminMiddleware, removeAdmin);
+// --- Specific Workspace Operations (by ID) ---
+router.get('/:id', getWorkspace);
+router.put('/:id', validateWorkspaceInput, updateWorkspace);
+router.delete('/:id', deleteWorkspace);
 
-// User management routes (admin or super admin)
-router.delete('/:slug/users', checkAdminMiddleware, removeUser);
+// --- Team Management (by Workspace ID) ---
+router.get('/:id/team', getWorkspaceTeam);
+router.post('/:id/team', addTeamMember);
+router.delete('/:id/team/:userIdToRemove', removeTeamMember);
 
-// Workspace management routes (super admin only)
-router.post('/', addNewWorkspace);
-router.put(
-    '/:slug',
-    checkSuperAdminMiddleware,
-    validateWorkspaceInput,
-    updateWorkspace,
-);
-router.delete('/:slug', checkSuperAdminMiddleware, deleteWorkspace);
+// --- Admin Role Management (by Workspace ID & User ID) ---
+router.post('/:id/admins/:userId', promoteToAdmin);
+router.delete('/:id/admins/:userId', demoteFromAdmin);
 
 export default router;

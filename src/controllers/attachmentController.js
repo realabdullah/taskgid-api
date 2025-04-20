@@ -4,216 +4,273 @@
 import Attachment from '../models/Attachment.js';
 import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
-import 'dotenv/config';
-import {deleteFile} from '../utils/fileUpload.js';
+import storageProvider from '../utils/storageFactory.js'; // Import the storage factory instance
+import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
+
+// Helper for standardized error responses
+const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
 
 /**
- * Upload a file attachment to a task
- * @param {Object} req - Request object
- * @param {Object} res - Response object
+ * Handles file upload and attachment creation for a Task.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
  */
 export const uploadTaskAttachment = async (req, res) => {
+    const {id: workspaceId, taskId} = req.params;
+    const userId = req.user.id;
+
+    if (!req.file) {
+        return errorResponse(res, 400, 'No file uploaded.');
+    }
+
     try {
-        const {taskId} = req.params;
-        const {uploadedFile} = req;
-
-        if (!uploadedFile) {
-            return res.status(400).json({
-                success: false,
-                error: 'No file uploaded',
-            });
-        }
-
-        // Check if task exists
-        const task = await Task.findByPk(taskId);
+        // 1. Authorization: Check if user is member of the task's workspace
+        const task = await Task.findByPk(taskId, {attributes: ['workspaceId']});
         if (!task) {
-            return res.status(404).json({
-                success: false,
-                error: 'Task not found',
-            });
+            return errorResponse(res, 404, 'Task not found');
+        }
+        if (task.workspaceId !== workspaceId) { // Basic sanity check
+            return errorResponse(res, 400, 'Task does not belong to the specified workspace');
+        }
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            return errorResponse(res, 403, 'Access denied to this workspace');
         }
 
-        // Create attachment record
+        // 2. Upload file using storage provider
+        const uploadedFile = await storageProvider.upload(req.file);
+        if (!uploadedFile || !uploadedFile.url) {
+            throw new Error('File upload failed via storage provider.');
+        }
+
+        // 3. Create Attachment record in DB
         const attachment = await Attachment.create({
-            ...uploadedFile,
-            taskId,
-            userId: req.user.id,
+            filename: uploadedFile.path, // Or key, depending on provider
+            originalname: uploadedFile.originalname || req.file.originalname,
+            mimetype: uploadedFile.mimetype || req.file.mimetype,
+            size: uploadedFile.size || req.file.size,
+            path: uploadedFile.path, // Store the path/key for deletion
+            url: uploadedFile.url,
+            storageType: storageProvider.getStorageType(), // Get type from provider
+            userId: userId,
+            taskId: taskId, // Link to task
+            commentId: null, // Explicitly null for task attachments
         });
 
-        res.status(201).json({
-            success: true,
-            attachment,
-        });
+        res.status(201).json({success: true, attachment});
     } catch (error) {
         console.error('Error uploading task attachment:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to upload attachment',
-        });
+        // Attempt to clean up uploaded file if DB insert fails
+        if (req.file && error.name !== 'StorageUploadError') { // Avoid deleting if storage itself failed
+            try {
+                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
+                if (pathToDelete) await storageProvider.delete(pathToDelete);
+            } catch (cleanupError) {
+                console.error('Failed to cleanup partially uploaded file:', cleanupError);
+            }
+        }
+        return errorResponse(res, 500, 'Failed to upload attachment.');
     }
 };
 
 /**
- * Upload a file attachment to a comment
- * @param {Object} req - Request object
- * @param {Object} res - Response object
+ * Handles file upload and attachment creation for a Comment.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
  */
 export const uploadCommentAttachment = async (req, res) => {
+    const {id: workspaceId, commentId} = req.params;
+    const userId = req.user.id;
+
+    if (!req.file) {
+        return errorResponse(res, 400, 'No file uploaded.');
+    }
+
     try {
-        const {commentId} = req.params;
-        const {uploadedFile} = req;
-
-        if (!uploadedFile) {
-            return res.status(400).json({
-                success: false,
-                error: 'No file uploaded',
-            });
-        }
-
-        // Check if comment exists
-        const comment = await Comment.findByPk(commentId);
+        // 1. Authorization: Check if user is member of the comment's workspace
+        const comment = await Comment.findByPk(commentId, {
+            include: [{model: Task, as: 'task', attributes: ['workspaceId']}],
+        });
         if (!comment) {
-            return res.status(404).json({
-                success: false,
-                error: 'Comment not found',
-            });
+            return errorResponse(res, 404, 'Comment not found');
+        }
+        if (!comment.task || comment.task.workspaceId !== workspaceId) { // Basic sanity check
+            return errorResponse(res, 400, 'Comment does not belong to the specified workspace');
+        }
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            return errorResponse(res, 403, 'Access denied to this workspace');
         }
 
-        // Create attachment record
+        // 2. Upload file
+        const uploadedFile = await storageProvider.upload(req.file);
+        if (!uploadedFile || !uploadedFile.url) {
+            throw new Error('File upload failed via storage provider.');
+        }
+
+        // 3. Create Attachment record
         const attachment = await Attachment.create({
-            ...uploadedFile,
-            commentId,
-            userId: req.user.id,
+            filename: uploadedFile.path,
+            originalname: uploadedFile.originalname || req.file.originalname,
+            mimetype: uploadedFile.mimetype || req.file.mimetype,
+            size: uploadedFile.size || req.file.size,
+            path: uploadedFile.path,
+            url: uploadedFile.url,
+            storageType: storageProvider.getStorageType(),
+            userId: userId,
+            taskId: null, // Explicitly null for comment attachments
+            commentId: commentId, // Link to comment
         });
 
-        res.status(201).json({
-            success: true,
-            attachment,
-        });
+        res.status(201).json({success: true, attachment});
     } catch (error) {
         console.error('Error uploading comment attachment:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to upload attachment',
-        });
-    }
-};
-
-/**
- * Get all attachments for a task
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
-export const getTaskAttachments = async (req, res) => {
-    try {
-        const {taskId} = req.params;
-
-        // Check if task exists
-        const task = await Task.findByPk(taskId);
-        if (!task) {
-            return res.status(404).json({
-                success: false,
-                error: 'Task not found',
-            });
+        // Attempt cleanup
+        if (req.file && error.name !== 'StorageUploadError') {
+            try {
+                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
+                if (pathToDelete) await storageProvider.delete(pathToDelete);
+            } catch (cleanupError) {
+                console.error('Failed to cleanup partially uploaded file:', cleanupError);
+            }
         }
-
-        // Get attachments
-        const attachments = await Attachment.findAll({
-            where: {taskId},
-            order: [['createdAt', 'DESC']],
-        });
-
-        res.json({
-            success: true,
-            attachments,
-        });
-    } catch (error) {
-        console.error('Error getting task attachments:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get attachments',
-        });
+        return errorResponse(res, 500, 'Failed to upload attachment.');
     }
 };
 
 /**
- * Get all attachments for a comment
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
-export const getCommentAttachments = async (req, res) => {
-    try {
-        const {commentId} = req.params;
-
-        // Check if comment exists
-        const comment = await Comment.findByPk(commentId);
-        if (!comment) {
-            return res.status(404).json({
-                success: false,
-                error: 'Comment not found',
-            });
-        }
-
-        // Get attachments
-        const attachments = await Attachment.findAll({
-            where: {commentId},
-            order: [['createdAt', 'DESC']],
-        });
-
-        res.json({
-            success: true,
-            attachments,
-        });
-    } catch (error) {
-        console.error('Error getting comment attachments:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get attachments',
-        });
-    }
-};
-
-/**
- * Delete an attachment
- * @param {Object} req - Request object
- * @param {Object} res - Response object
+ * Deletes an attachment.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
  */
 export const deleteAttachment = async (req, res) => {
-    try {
-        const {attachmentId} = req.params;
+    const {attachmentId} = req.params;
+    const userId = req.user.id;
 
-        // Find attachment
+    try {
         const attachment = await Attachment.findByPk(attachmentId);
         if (!attachment) {
-            return res.status(404).json({
-                success: false,
-                error: 'Attachment not found',
-            });
+            return errorResponse(res, 404, 'Attachment not found');
         }
 
-        // Check if user is authorized to delete
-        if (attachment.userId !== req.user.id) {
-            return res.status(403).json({
-                success: false,
-                error: 'Not authorized to delete this attachment',
+        // Authorization: Check if user is the uploader or workspace admin/creator
+        let workspaceId = null;
+        if (attachment.taskId) {
+            const task = await Task.findByPk(attachment.taskId, {attributes: ['workspaceId']});
+            workspaceId = task?.workspaceId;
+        } else if (attachment.commentId) {
+            const comment = await Comment.findByPk(attachment.commentId, {
+                include: [{model: Task, as: 'task', attributes: ['workspaceId']}],
             });
+            workspaceId = comment?.task?.workspaceId;
         }
 
-        // Delete file from storage
-        await deleteFile(attachment.filename);
+        if (!workspaceId) {
+            // Should not happen if attachment is valid, but safety check
+            console.error(`Could not determine workspace for attachment ${attachmentId}`);
+            return errorResponse(res, 500, 'Could not verify attachment ownership.');
+        }
 
-        // Delete attachment record
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        const isOwner = attachment.userId === userId;
+        const canDelete = isOwner || (role && ['creator', 'admin'].includes(role));
+
+        if (!canDelete) {
+            return errorResponse(res, 403, 'You do not have permission to delete this attachment');
+        }
+
+        // Delete file from storage provider
+        await storageProvider.delete(attachment.path); // Use stored path/key
+
+        // Delete Attachment record from DB
         await attachment.destroy();
 
-        res.json({
-            success: true,
-            message: 'Attachment deleted successfully',
-        });
+        res.json({success: true, message: 'Attachment deleted successfully'});
     } catch (error) {
-        console.error('Error deleting attachment:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete attachment',
+        console.error(`Error deleting attachment ${attachmentId}:`, error);
+        // Check if it was a storage provider error vs DB error
+        if (error.name === 'StorageDeleteError') {
+            return errorResponse(res, 500, 'Failed to delete file from storage. Please try again.');
+        } else {
+            return errorResponse(res, 500, 'Failed to delete attachment record.');
+        }
+    }
+};
+
+/**
+ * Lists attachments for a specific task.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
+export const getTaskAttachments = async (req, res) => {
+    const {id: workspaceId, taskId} = req.params;
+    const userId = req.user.id;
+
+    try {
+        // Authorization: Check if user is member of the task's workspace
+        const task = await Task.findByPk(taskId, {attributes: ['workspaceId']});
+        if (!task) {
+            return errorResponse(res, 404, 'Task not found');
+        }
+        if (task.workspaceId !== workspaceId) {
+            return errorResponse(res, 400, 'Task does not belong to the specified workspace');
+        }
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            return errorResponse(res, 403, 'Access denied to this workspace');
+        }
+
+        const attachments = await Attachment.findAll({
+            where: {taskId: taskId},
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username', 'firstName'],
+            }], // Include uploader basic info
+            order: [['createdAt', 'ASC']],
         });
+
+        res.json({success: true, attachments});
+    } catch (error) {
+        console.error(`Error fetching attachments for task ${taskId}:`, error);
+        return errorResponse(res, 500, 'Failed to fetch task attachments.');
+    }
+};
+
+/**
+ * Lists attachments for a specific comment.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
+export const getCommentAttachments = async (req, res) => {
+    const {id: workspaceId, commentId} = req.params;
+    const userId = req.user.id;
+
+    try {
+        // Authorization: Check if user is member of the comment's workspace
+        const comment = await Comment.findByPk(commentId, {
+            include: [{model: Task, as: 'task', attributes: ['workspaceId']}],
+        });
+        if (!comment) {
+            return errorResponse(res, 404, 'Comment not found');
+        }
+        if (!comment.task || comment.task.workspaceId !== workspaceId) {
+            return errorResponse(res, 400, 'Comment does not belong to the specified workspace');
+        }
+        const role = await getUserRoleInWorkspace(userId, workspaceId);
+        if (!role) {
+            return errorResponse(res, 403, 'Access denied to this workspace');
+        }
+
+        const attachments = await Attachment.findAll({
+            where: {commentId: commentId},
+            include: [{model: User, as: 'user', attributes: ['id', 'username', 'firstName']}],
+            order: [['createdAt', 'ASC']],
+        });
+
+        res.json({success: true, attachments});
+    } catch (error) {
+        console.error(`Error fetching attachments for comment ${commentId}:`, error);
+        return errorResponse(res, 500, 'Failed to fetch comment attachments.');
     }
 };

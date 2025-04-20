@@ -1,9 +1,8 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
-import {createWorkspace} from './workspaceController.js';
-import {sendWelcomeNotification} from '../services/knock.js';
 import 'dotenv/config';
+import emailService from '../utils/emailService.js';
 
 // Security constants
 const TOKEN_EXPIRY = {
@@ -57,43 +56,23 @@ export const register = async (req, res) => {
             return errorResponse(res, 400, 'Username can only contain letters, numbers, and underscores');
         }
 
-        const user = new User({
+        const user = await User.create({
             firstName,
             lastName,
             email,
             password,
             username,
+            registrationSource: 'self',
         });
 
-        let savedUser;
-        try {
-            savedUser = await user.save();
-        } catch (error) {
-            if (error.message.includes('already exists')) {
-                return errorResponse(res, 409, 'An account with this email already exists');
-            }
-            throw error; // Re-throw other errors to be caught by the outer try-catch
-        }
+        // Send welcome email
+        await emailService.sendWelcomeEmail(user);
 
         const access = await user.generateAccessToken();
         const refresh = await user.generateRefreshToken();
 
-        // Create a workspace for the user
-        const workspacePayload = {
-            title: `${firstName}'s Workspace`,
-            description: `This is ${firstName}'s workspace`,
-            slug: `${firstName.toLowerCase()}workspace`,
-            userId: savedUser.id,
-        };
-
-        const workspace = await createWorkspace(workspacePayload, 'new-user');
-        savedUser.workspaceId = workspace.id;
-
-        // Send welcome email
-        await sendWelcomeNotification(savedUser);
-
         return successResponse(res, {
-            user: savedUser,
+            user,
             accessToken: {
                 token: access,
                 expires: new Date(Date.now() + TOKEN_EXPIRY.access),

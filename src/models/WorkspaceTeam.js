@@ -1,3 +1,4 @@
+/* eslint-disable new-cap */
 import {DataTypes} from 'sequelize';
 import sequelize from '../config/database.js';
 
@@ -17,6 +18,7 @@ const WorkspaceTeam = sequelize.define('WorkspaceTeam', {
             model: 'workspaces',
             key: 'id',
         },
+        onDelete: 'CASCADE',
     },
     userId: {
         type: DataTypes.UUID,
@@ -25,17 +27,24 @@ const WorkspaceTeam = sequelize.define('WorkspaceTeam', {
             model: 'users',
             key: 'id',
         },
+        onDelete: 'CASCADE',
     },
-    isAdmin: {
-        type: DataTypes.BOOLEAN,
+    role: {
+        type: DataTypes.ENUM('creator', 'admin', 'member'),
         allowNull: false,
-        defaultValue: false,
+        defaultValue: 'member',
     },
 }, {
     sequelize,
     modelName: 'WorkspaceTeam',
     tableName: 'workspace_teams',
     timestamps: true,
+    indexes: [
+        {
+            unique: true,
+            fields: ['userId', 'workspaceId'],
+        },
+    ],
 });
 
 export default WorkspaceTeam;

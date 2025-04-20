@@ -41,6 +41,15 @@ components:
         profilePicture:
           type: string
           description: URL to the user's profile picture
+        registrationSource:
+          type: string
+          enum: [invite, self]
+          description: How the user registered.
+        invitedBy:
+          type: string
+          format: uuid
+          description: ID of the user who initially invited this user to the platform (if applicable).
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -71,10 +80,6 @@ components:
           description: ID of the user who created the workspace
         user:
           $ref: '#/components/schemas/User'
-        team:
-          type: array
-          items:
-            $ref: '#/components/schemas/User'
         createdAt:
           type: string
           format: date-time
@@ -179,6 +184,11 @@ components:
           type: string
           format: uuid
           description: ID of the workspace the user is invited to
+        invitedById:
+          type: string
+          format: uuid
+          description: ID of the user who sent this specific invite.
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -187,6 +197,15 @@ components:
           type: string
           format: date-time
           description: When the invite was last updated
+    WorkspaceTeamMember:
+       allOf:
+         - $ref: '#/components/schemas/User'
+         - type: object
+           properties:
+             role:
+               type: string
+               enum: [creator, admin, member]
+               description: The user's role within this specific workspace.
     Error:
       type: object
       properties:
@@ -196,128 +215,69 @@ components:
         success:
           type: boolean
           description: Always false for error responses
-    PaginatedResponse:
+    Pagination:
       type: object
       properties:
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+        totalPages: { type: integer }
+        hasNextPage: { type: boolean }
+        hasPrevPage: { type: boolean }
+    PaginatedWorkspacesResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
         data:
           type: array
-          description: Array of items
+          items:
+            $ref: '#/components/schemas/Workspace'
         pagination:
-          type: object
-          properties:
-            total:
-              type: integer
-              description: Total number of items
-            page:
-              type: integer
-              description: Current page number
-            limit:
-              type: integer
-              description: Number of items per page
-            totalPages:
-              type: integer
-              description: Total number of pages
-            hasNextPage:
-              type: boolean
-              description: Whether there is a next page
-            hasPrevPage:
-              type: boolean
-              description: Whether there is a previous page
-        success:
-          type: boolean
-          description: Always true for successful responses
+          $ref: '#/components/schemas/Pagination'
+    PaginatedTeamResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceTeamMember'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     Attachment:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique identifier for the attachment
-        filename:
-          type: string
-          description: Original filename
-        path:
-          type: string
-          description: Path to the file
-        url:
-          type: string
-          description: URL to access the file
-        taskId:
-          type: string
-          format: uuid
-          description: ID of the task this attachment belongs to
-        commentId:
-          type: string
-          format: uuid
-          description: ID of the comment this attachment belongs to
-        userId:
-          type: string
-          format: uuid
-          description: ID of the user who uploaded the attachment
-        createdAt:
-          type: string
-          format: date-time
-          description: When the attachment was created
-        updatedAt:
-          type: string
-          format: date-time
-          description: When the attachment was last updated
-    Notification:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique identifier for the notification
-        userId:
-          type: string
-          format: uuid
-          description: ID of the user this notification belongs to
-        title:
-          type: string
-          description: Title of the notification
-        message:
-          type: string
-          description: Content of the notification
-        read:
-          type: boolean
-          description: Whether the notification has been read
-        createdAt:
-          type: string
-          format: date-time
-          description: When the notification was created
-        updatedAt:
-          type: string
-          format: date-time
-          description: When the notification was last updated
-    Authn:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique identifier for the authentication method
-        userId:
-          type: string
-          format: uuid
-          description: ID of the user this authentication method belongs to
-        credentialId:
-          type: string
-          description: Credential ID for WebAuthn
-        publicKey:
-          type: string
-          description: Public key for WebAuthn
-        counter:
-          type: integer
-          description: Counter for WebAuthn
-        createdAt:
-          type: string
-          format: date-time
-          description: When the authentication method was created
-        updatedAt:
-          type: string
-          format: date-time
-          description: When the authentication method was last updated
+        id: { type: string, format: uuid }
+        filename: { type: string, description: "Path or key used by storage provider" }
+        originalname: { type: string, description: "Original name of the uploaded file" }
+        mimetype: { type: string }
+        size: { type: integer, description: "Size in bytes" }
+        path: { type: string, description: "Path/key used by storage provider (for deletion)" }
+        url: { type: string, description: "Publicly accessible URL" }
+        storageType: { type: string, description: "Type of storage used (e.g., local, s3, cloudinary)" }
+        taskId: { type: string, format: uuid, nullable: true }
+        commentId: { type: string, format: uuid, nullable: true }
+        userId: { type: string, format: uuid, description: "ID of the uploader" }
+        user: { $ref: '#/components/schemas/User', description: "Basic uploader info (populated on GET)" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+  responses:
+    UnauthorizedError:
+      description: Unauthorized (invalid/missing token)
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/Error' } }
+    ForbiddenError:
+      description: Forbidden (insufficient permissions)
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/Error' } }
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/Error' } }
+    BadRequestError:
+      description: Bad Request (validation error, conflict, etc.)
+      content:
+        application/json: { schema: { $ref: '#/components/schemas/Error' } }
 paths:
   /auth/register:
     post:
@@ -804,6 +764,7 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: WebAuthn credential removed successfully
@@ -826,48 +787,33 @@ paths:
                 $ref: '#/components/schemas/Error'
   /workspaces:
     get:
-      summary: Get all workspaces
+      summary: Get user's workspaces (paginated)
+      description: Returns workspaces the user is a member, admin, or creator of.
       tags:
-        - Workspace Management
+        - Workspaces
       security:
         - BearerAuth: []
       parameters:
         - name: page
           in: query
-          description: Page number
-          schema:
-            type: integer
-            default: 1
+          schema: { type: integer, default: 1 }
         - name: limit
           in: query
-          description: Number of items per page
-          schema:
-            type: integer
-            default: 10
+          schema: { type: integer, default: 10 }
       responses:
         '200':
-          description: Workspaces retrieved successfully
+          description: List of workspaces user is a member of.
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: '#/components/schemas/PaginatedResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Workspace'
+                $ref: '#/components/schemas/PaginatedWorkspacesResponse'
         '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Create a new workspace
+      description: Creates a new workspace and sets the requestor as the creator.
       tags:
-        - Workspace Management
+        - Workspaces
       security:
         - BearerAuth: []
       requestBody:
@@ -876,41 +822,252 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - title
-                - slug
+              required: [title]
               properties:
-                title:
-                  type: string
-                slug:
-                  type: string
-                description:
-                  type: string
+                title: { type: string }
+                slug: { type: string, description: "Optional. Auto-generated if missing." }
+                description: { type: string }
       responses:
         '201':
-          description: Workspace created successfully
+          description: Workspace created successfully (creator added as admin).
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                    example: true
-                  workspace:
-                    $ref: '#/components/schemas/Workspace'
+                  success: { type: boolean, example: true }
+                  workspace: { $ref: '#/components/schemas/Workspace' }
         '400':
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequestError'
         '401':
-          description: Unauthorized
+          $ref: '#/components/responses/UnauthorizedError'
+  /workspaces/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The ID of the workspace.
+    get:
+      summary: Get workspace details by ID
+      description: Returns details for a workspace if the user is a member, admin, or creator.
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Workspace details (owner included, team excluded).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    put:
+      summary: Update workspace details
+      description: Updates workspace title, slug, or description. **Creator only.**
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                slug: { type: string }
+                description: { type: string }
+      responses:
+        '200':
+          description: Workspace updated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    delete:
+      summary: Delete a workspace
+      description: Permanently deletes a workspace. **Creator only.**
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Workspace deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { success: { type: boolean, example: true } }
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /workspaces/{id}/team:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The ID of the workspace.
+    get:
+      summary: Get workspace team members (paginated)
+      description: Returns the list of members (including their roles) for a workspace the user is part of.
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Paginated list of team members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTeamResponse'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    post:
+      summary: Add a team member
+      description: Adds an *existing* user (by email) to the workspace with the 'member' role. **Creator or Admin only.** (Use invite flow for new users).
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '201':
+          description: Team member added successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { success: { type: boolean, example: true }, message: { type: string } }
+        '400': { $ref: '#/components/responses/BadRequestError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /workspaces/{id}/team/{userIdToRemove}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Workspace ID.
+      - name: userIdToRemove
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: User ID of the member to remove.
+    delete:
+      summary: Remove a team member
+      description: Removes a user from the workspace. **Creator or Admin only.** Admins cannot remove other admins or the creator.
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Team member removed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { success: { type: boolean, example: true }, message: { type: string } }
+        '400': { $ref: '#/components/responses/BadRequestError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /workspaces/{id}/admins/{userId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Workspace ID.
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: User ID of the member to manage admin role.
+    post:
+      summary: Promote a team member to admin
+      description: Changes a member's role from 'member' to 'admin'. **Creator only.**
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Member promoted to admin successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { success: { type: boolean, example: true }, message: { type: string } }
+        '400': { $ref: '#/components/responses/BadRequestError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+    delete:
+      summary: Demote a team member from admin
+      description: Changes an admin's role from 'admin' to 'member'. **Creator only.** Cannot demote the creator.
+      tags:
+        - Workspaces
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Member demoted from admin successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { success: { type: boolean, example: true }, message: { type: string } }
+        '400': { $ref: '#/components/responses/BadRequestError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
   /workspaces/{slug}:
     get:
       summary: Get a specific workspace
@@ -1024,158 +1181,6 @@ paths:
                     example: true
         '404':
           description: Workspace not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /workspaces/{slug}/admins:
-    post:
-      summary: Add a user as an admin to a workspace
-      tags:
-        - Workspace Management
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-              properties:
-                email:
-                  type: string
-                  format: email
-      responses:
-        '200':
-          description: Admin added successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: Admin added successfully
-        '404':
-          description: Workspace or user not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    delete:
-      summary: Remove a user's admin status from a workspace
-      tags:
-        - Workspace Management
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-              properties:
-                email:
-                  type: string
-                  format: email
-      responses:
-        '200':
-          description: Admin removed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: Admin removed successfully
-        '404':
-          description: Workspace or user not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /workspaces/{slug}/users:
-    delete:
-      summary: Remove a user from a workspace
-      tags:
-        - Workspace Management
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-              properties:
-                email:
-                  type: string
-                  format: email
-      responses:
-        '200':
-          description: User removed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: User removed from workspace successfully
-        '404':
-          description: Workspace or user not found
           content:
             application/json:
               schema:
@@ -1802,13 +1807,10 @@ paths:
             type: string
             format: uuid
       requestBody:
-        required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required:
-                - file
               properties:
                 file:
                   type: string
@@ -1892,182 +1894,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /workspaces/{slug}/tasks/{taskId}/comments/{commentId}/attachments:
+  /workspaces/{slug}/comments/{commentId}/attachments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Workspace ID (associated with the comment).
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Comment ID.
     get:
-      summary: Get all attachments for a comment
-      tags:
-        - Attachment Management
+      summary: Get attachments for a comment
+      tags: [Attachments]
       security:
         - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: taskId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: commentId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       responses:
         '200':
-          description: Attachments retrieved successfully
+          description: List of attachments for the comment.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                    example: true
-                  attachments:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Attachment'
-        '404':
-          description: Comment not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                  success: { type: boolean, example: true }
+                  attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
     post:
       summary: Upload an attachment to a comment
-      tags:
-        - Attachment Management
+      tags: [Attachments]
       security:
         - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: taskId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: commentId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       requestBody:
-        required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required:
-                - file
               properties:
                 file:
                   type: string
                   format: binary
       responses:
         '201':
-          description: Attachment uploaded successfully
+          description: Attachment uploaded successfully.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                    example: true
-                  attachment:
-                    $ref: '#/components/schemas/Attachment'
-        '400':
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: Comment not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /workspaces/{slug}/tasks/{taskId}/comments/{commentId}/attachments/{attachmentId}:
+                  success: { type: boolean, example: true }
+                  attachment: { $ref: '#/components/schemas/Attachment' }
+        '400': { $ref: '#/components/responses/BadRequestError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /attachments/{attachmentId}:
+    parameters:
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: The ID of the attachment to delete.
     delete:
-      summary: Delete an attachment from a comment
-      tags:
-        - Attachment Management
+      summary: Delete an attachment
+      tags: [Attachments]
       security:
         - BearerAuth: []
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: taskId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: commentId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: attachmentId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      description: Deletes an attachment. Requires user to be the uploader or workspace admin/creator.
       responses:
         '200':
-          description: Attachment deleted successfully
+          description: Attachment deleted successfully.
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-        '404':
-          description: Attachment not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                properties: { success: { type: boolean, example: true }, message: { type: string } }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
   /workspaces/{slug}/invites:
     post:
-      summary: Invite a user to a workspace
+      summary: Invite a user to a specific workspace
+      description: Sends an invitation email to a user to join the workspace. **Creator or Admin only.**
       tags:
         - Invite Management
       security:
@@ -2336,4 +2248,6 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error' 
+                $ref: '#/components/schemas/Error'
+
+# END OF FILE 

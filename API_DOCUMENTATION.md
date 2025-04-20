@@ -2,21 +2,23 @@
 
 ## Overview
 
-TaskGid is a task management application with workspaces, teams, tasks, and comments. This API documentation provides details on all endpoints, request/response formats, and authentication requirements.
+TaskGid is a task management application featuring workspaces, role-based team collaboration, tasks, and comments. This API documentation provides details on all endpoints, request/response formats, authentication methods, and authorization rules.
 
 ## Base URL
 
 ```
-https://api.taskgid.com
+https://api.taskgid.com/v1 # Assuming v1 prefix based on OpenAPI spec
 ```
 
 ## Authentication
 
-Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
+Most endpoints require authentication using JWT Bearer tokens. Obtain tokens via the `/auth/login` or `/auth/register` endpoints. Include the **access token** in the `Authorization` header for subsequent requests:
 
 ```
-Authorization: Bearer <token>
+Authorization: Bearer <access_token>
 ```
+
+Use the **refresh token** with the `/auth/refresh` endpoint to obtain a new set of tokens when the access token expires.
 
 ### Authentication Endpoints
 
@@ -25,6 +27,8 @@ Authorization: Bearer <token>
 ```
 POST /auth/register
 ```
+
+**Description:** Registers a new user via self-signup. A default workspace is **not** created automatically. The user's `registrationSource` will be set to `self`.
 
 **Request Body:**
 ```json
@@ -37,18 +41,29 @@ POST /auth/register
 }
 ```
 
-**Response:**
+**Response (201 Created):**
 ```json
 {
   "success": true,
-  "token": "jwt_token_here",
+  "accessToken": {
+    "token": "access_jwt_token_here",
+    "expires": "iso_date_string_for_expiry"
+  },
+  "refreshToken": {
+    "token": "refresh_jwt_token_here",
+    "expires": "iso_date_string_for_expiry"
+  },
   "user": {
-    "id": "uuid",
+    "id": "user_uuid",
     "firstName": "John",
     "lastName": "Doe",
     "email": "john@example.com",
     "username": "johndoe",
-    "profilePicture": "url_to_picture"
+    "profilePicture": "url_to_default_avatar",
+    "registrationSource": "self",
+    "createdAt": "datetime",
+    "updatedAt": "datetime"
+    // Note: Sensitive fields like password, tokens are excluded
   }
 }
 ```
@@ -67,19 +82,13 @@ POST /auth/login
 }
 ```
 
-**Response:**
+**Response (200 OK):** (Includes access and refresh tokens)
 ```json
 {
   "success": true,
-  "token": "jwt_token_here",
-  "user": {
-    "id": "uuid",
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "username": "johndoe",
-    "profilePicture": "url_to_picture"
-  }
+  "accessToken": { ... as above ... },
+  "refreshToken": { ... as above ... },
+  "user": { ... user details as above ... }
 }
 ```
 
@@ -89,7 +98,10 @@ POST /auth/login
 POST /auth/logout
 ```
 
-**Response:**
+**Description:** Invalidates the user's current access token server-side (by clearing the stored token hash).
+**Auth Required**: Yes
+
+**Response (200 OK):**
 ```json
 {
   "success": true,
@@ -103,18 +115,22 @@ POST /auth/logout
 POST /auth/refresh
 ```
 
+**Description:** Exchanges a valid refresh token for a new pair of access and refresh tokens.
+**Auth Required**: Yes (Requires both expired `Authorization: Bearer <access_token>` header AND `refreshToken` in body for validation)
+
 **Request Body:**
 ```json
 {
-  "refreshToken": "refresh_token_here"
+  "refreshToken": "valid_refresh_token_here"
 }
 ```
 
-**Response:**
+**Response (200 OK):** (Includes new access and refresh tokens)
 ```json
 {
   "success": true,
-  "token": "new_jwt_token_here"
+  "accessToken": { ... new token info ... },
+  "refreshToken": { ... new token info ... }
 }
 ```
 
@@ -126,17 +142,23 @@ POST /auth/refresh
 GET /users/profile
 ```
 
-**Response:**
+**Description:** Retrieves the profile of the currently authenticated user.
+**Auth Required**: Yes
+
+**Response (200 OK):**
 ```json
 {
   "success": true,
   "user": {
-    "id": "uuid",
+    "id": "user_uuid",
     "firstName": "John",
     "lastName": "Doe",
     "email": "john@example.com",
     "username": "johndoe",
-    "profilePicture": "url_to_picture"
+    "profilePicture": "url_to_picture",
+    "registrationSource": "self", // or "invite"
+    "createdAt": "datetime",
+    "updatedAt": "datetime"
   }
 }
 ```
@@ -147,27 +169,24 @@ GET /users/profile
 PUT /users/profile
 ```
 
+**Description:** Updates the authenticated user's profile information (name, username). Can also update the password.
+**Auth Required**: Yes
+
 **Request Body:**
 ```json
 {
-  "firstName": "John",
-  "lastName": "Doe",
-  "username": "johndoe"
+  "firstName": "Johnny",
+  "lastName": "Doel",
+  "username": "johnnyd",
+  "password": "newSecurePassword" // Optional: Include only if changing password
 }
 ```
 
-**Response:**
+**Response (200 OK):**
 ```json
 {
   "success": true,
-  "user": {
-    "id": "uuid",
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "username": "johndoe",
-    "profilePicture": "url_to_picture"
-  }
+  "user": { ... updated user profile (excluding password) ... }
 }
 ```
 
@@ -177,392 +196,68 @@ PUT /users/profile
 PUT /users/profile/picture
 ```
 
-**Request Body:**
+**Description:** Updates the authenticated user's profile picture URL.
+**Auth Required**: Yes
+
+**Request Body:** (Note: Field name is `profile_picture`)
 ```json
 {
-  "profilePicture": "base64_encoded_image"
+  "profile_picture": "https://new-picture-url.com/image.jpg"
 }
 ```
 
-**Response:**
+**Response (200 OK):**
 ```json
 {
   "success": true,
-  "user": {
-    "id": "uuid",
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "username": "johndoe",
-    "profilePicture": "url_to_picture"
-  }
+  "message": "Profile picture updated successfully"
 }
 ```
+
+## Workspace Roles
+
+Access to workspace management actions is controlled by roles assigned to users within each workspace via the `WorkspaceTeam` association. The roles are:
+
+-   **`creator`**: The user who initially created the workspace. Has full control, including deleting the workspace and managing admin roles.
+-   **`admin`**: Users promoted by the Creator. Can manage team members (add/remove members) and perform other administrative tasks, but cannot delete the workspace, manage other admins, or remove the Creator.
+-   **`member`**: Default role for users added or invited to the workspace. Can access workspace content (tasks, comments, etc.) based on workspace settings, but has no administrative privileges over the workspace or team.
 
 ## Workspace Management
 
-### Get All Workspaces
-- **GET** `/api/workspaces`
-- **Auth Required**: Yes
-- **Response**: List of workspaces the user has access to
+### Get User's Workspaces (Paginated)
+
+```
+GET /workspaces
+```
+
+**Description:** Retrieves a paginated list of workspaces where the authenticated user has any role (`creator`, `admin`, or `member`).
+**Auth Required**: Yes
+**Query Parameters**:
+- `page` (integer, default: 1)
+- `limit` (integer, default: 10)
+
+**Response (200 OK)**: Paginated list of workspaces. Team members are **not** included in this list view.
 ```json
 {
-  "workspaces": [
+  "success": true,
+  "data": [
     {
-      "id": "uuid",
-      "name": "string",
-      "slug": "string",
-      "description": "string",
+      "id": "workspace_uuid_1",
+      "title": "Project Alpha",
+      "slug": "project-alpha",
+      "description": "Workspace for Alpha project",
       "createdAt": "datetime",
       "updatedAt": "datetime",
-      "userId": "uuid",
-      "isAdmin": boolean,
-      "isSuperAdmin": boolean
+      "userId": "creator_user_uuid", // ID of the creator
+      "user": { // Creator details (basic info)
+         "id": "creator_user_uuid",
+         "firstName": "Alice",
+         "lastName": "Smith",
+         "email": "alice@example.com",
+         "profilePicture": "url_to_picture"
+       }
     }
-  ],
-  "pagination": {
-    "total": number,
-    "page": number,
-    "limit": number,
-    "totalPages": number,
-    "hasNext": boolean,
-    "hasPrev": boolean
-  }
-}
-```
-
-### Get Workspace
-- **GET** `/api/workspaces/:slug`
-- **Auth Required**: Yes
-- **Response**: Workspace details
-```json
-{
-  "id": "uuid",
-  "name": "string",
-  "slug": "string",
-  "description": "string",
-  "createdAt": "datetime",
-  "updatedAt": "datetime",
-  "userId": "uuid",
-  "isAdmin": boolean,
-  "isSuperAdmin": boolean,
-  "members": [
-    {
-      "id": "uuid",
-      "name": "string",
-      "email": "string",
-      "isAdmin": boolean
-    }
-  ]
-}
-```
-
-### Create Workspace
-- **POST** `/api/workspaces`
-- **Auth Required**: Yes
-- **Request Body**:
-```json
-{
-  "name": "string",
-  "description": "string"
-}
-```
-- **Response**: Created workspace details
-
-### Update Workspace
-- **PUT** `/api/workspaces/:slug`
-- **Auth Required**: Yes (Super Admin only)
-- **Request Body**:
-```json
-{
-  "name": "string",
-  "description": "string"
-}
-```
-- **Response**: Updated workspace details
-
-### Delete Workspace
-- **DELETE** `/api/workspaces/:slug`
-- **Auth Required**: Yes (Super Admin only)
-- **Response**: Success message
-
-## Admin Management
-
-### Add Admin
-- **POST** `/api/workspaces/:slug/admins`
-- **Auth Required**: Yes (Super Admin only)
-- **Request Body**:
-```json
-{
-  "userId": "uuid"
-}
-```
-- **Response**: Success message
-
-### Remove Admin
-- **DELETE** `/api/workspaces/:slug/admins`
-- **Auth Required**: Yes (Super Admin only)
-- **Request Body**:
-```json
-{
-  "userId": "uuid"
-}
-```
-- **Response**: Success message
-
-### Remove User
-- **DELETE** `/api/workspaces/:slug/users`
-- **Auth Required**: Yes (Admin or Super Admin)
-- **Request Body**:
-```json
-{
-  "userId": "uuid"
-}
-```
-- **Response**: Success message
-
-## Team Management
-
-### Get Workspace Team
-
-```
-GET /teams/:slug
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "team": [
-    {
-      "firstName": "Jane",
-      "lastName": "Smith",
-      "username": "janesmith",
-      "email": "jane@example.com",
-      "profilePicture": "url_to_picture"
-    },
-    {
-      "firstName": "Bob",
-      "lastName": "Johnson",
-      "username": "bobjohnson",
-      "email": "bob@example.com",
-      "profilePicture": "url_to_picture"
-    }
-  ]
-}
-```
-
-## Task Management
-
-### Get All Tasks in a Workspace
-
-```
-GET /tasks/:slug?page=1&limit=10
-```
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Number of items per page (default: 10)
-
-**Response:**
-```json
-{
-  "success": true,
-  "tasks": [
-    {
-      "id": "uuid",
-      "title": "Task Title",
-      "description": "Task description",
-      "status": "todo",
-      "priority": "medium",
-      "dueDate": "2023-12-31T00:00:00.000Z",
-      "assignee": {
-        "username": "janesmith",
-        "firstName": "Jane",
-        "lastName": "Smith",
-        "profilePicture": "url_to_picture"
-      },
-      "user": {
-        "username": "johndoe",
-        "firstName": "John",
-        "lastName": "Doe",
-        "profilePicture": "url_to_picture"
-      }
-    }
-  ],
-  "pagination": {
-    "total": 45,
-    "page": 1,
-    "limit": 10,
-    "totalPages": 5,
-    "hasNextPage": true,
-    "hasPrevPage": false
-  }
-}
-```
-
-### Get Task by ID
-
-```
-GET /tasks/:slug/:id
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "task": {
-    "id": "uuid",
-    "title": "Task Title",
-    "description": "Task description",
-    "status": "todo",
-    "priority": "medium",
-    "dueDate": "2023-12-31T00:00:00.000Z",
-    "assignee": {
-      "username": "janesmith",
-      "firstName": "Jane",
-      "lastName": "Smith",
-      "profilePicture": "url_to_picture"
-    },
-    "user": {
-      "username": "johndoe",
-      "firstName": "John",
-      "lastName": "Doe",
-      "profilePicture": "url_to_picture"
-    }
-  }
-}
-```
-
-### Create Task
-
-```
-POST /tasks/:slug
-```
-
-**Request Body:**
-```json
-{
-  "title": "New Task",
-  "description": "Task description",
-  "status": "todo",
-  "priority": "medium",
-  "dueDate": "2023-12-31T00:00:00.000Z",
-  "assignee": "janesmith",
-  "workspaceId": "workspace_uuid"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "title": "New Task",
-  "description": "Task description",
-  "status": "todo",
-  "priority": "medium",
-  "dueDate": "2023-12-31T00:00:00.000Z",
-  "assignee": {
-    "username": "janesmith",
-    "firstName": "Jane",
-    "lastName": "Smith",
-    "profilePicture": "url_to_picture"
-  },
-  "user": {
-    "username": "johndoe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "profilePicture": "url_to_picture"
-  }
-}
-```
-
-### Update Task
-
-```
-PUT /tasks/:slug/:id
-```
-
-**Request Body:**
-```json
-{
-  "title": "Updated Task",
-  "description": "Updated description",
-  "status": "in_progress",
-  "priority": "high",
-  "dueDate": "2023-12-31T00:00:00.000Z",
-  "assignee": "bobjohnson",
-  "workspaceId": "workspace_uuid"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "title": "Updated Task",
-  "description": "Updated description",
-  "status": "in_progress",
-  "priority": "high",
-  "dueDate": "2023-12-31T00:00:00.000Z",
-  "assignee": {
-    "username": "bobjohnson",
-    "firstName": "Bob",
-    "lastName": "Johnson",
-    "profilePicture": "url_to_picture"
-  },
-  "user": {
-    "username": "johndoe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "profilePicture": "url_to_picture"
-  }
-}
-```
-
-### Delete Task
-
-```
-DELETE /tasks/:slug/:id
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Task deleted successfully"
-}
-```
-
-## Comment Management
-
-### Get Task Comments
-
-```
-GET /tasks/:slug/:id/comments?page=1&limit=10
-```
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Number of items per page (default: 10)
-
-**Response:**
-```json
-{
-  "success": true,
-  "comments": [
-    {
-      "id": "uuid",
-      "content": "Comment text",
-      "user": {
-        "username": "johndoe",
-        "firstName": "John",
-        "lastName": "Doe",
-        "profilePicture": "url_to_picture"
-      },
-      "createdAt": "2023-06-26T12:00:00.000Z",
-      "updatedAt": "2023-06-26T12:00:00.000Z"
-    }
+    // ... more workspaces
   ],
   "pagination": {
     "total": 15,
@@ -575,36 +270,258 @@ GET /tasks/:slug/:id/comments?page=1&limit=10
 }
 ```
 
-### Add Task Comment
+### Create Workspace
 
 ```
-POST /tasks/:slug/:id/comments
+POST /workspaces
 ```
+
+**Description:** Creates a new workspace. The requesting user automatically becomes the **`creator`** of the workspace and is added to the `WorkspaceTeam` with that role.
+**Auth Required**: Yes
 
 **Request Body:**
 ```json
 {
-  "content": "New comment text",
-  "taskId": "task_uuid"
+  "title": "New Project Omega",
+  "slug": "project-omega", // Optional, unique slug. Auto-generated if missing.
+  "description": "Workspace for the Omega project"
 }
 ```
 
-**Response:**
+**Response (201 Created)**: Details of the newly created workspace.
 ```json
 {
   "success": true,
-  "comment": {
-    "id": "uuid",
-    "content": "New comment text",
-    "user": {
-      "username": "johndoe",
-      "firstName": "John",
-      "lastName": "Doe",
-      "profilePicture": "url_to_picture"
-    },
-    "createdAt": "2023-06-26T12:00:00.000Z",
-    "updatedAt": "2023-06-26T12:00:00.000Z"
+  "workspace": {
+    "id": "new_workspace_uuid",
+    "title": "New Project Omega",
+    "slug": "project-omega-or-generated",
+    "description": "Workspace for the Omega project",
+    "createdAt": "datetime",
+    "updatedAt": "datetime",
+    "userId": "requesting_user_uuid", // Creator ID
+    "user": { ... requesting user details (basic info) ... }
   }
+}
+```
+
+### Get Workspace Details
+
+```
+GET /workspaces/{id}
+```
+
+**Description:** Retrieves details for a specific workspace by its ID. Requires the user to have any role (`creator`, `admin`, or `member`) in the workspace.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+
+**Response (200 OK)**: Workspace details (team members are **not** included).
+```json
+{
+  "id": "workspace_uuid",
+  "title": "Project Alpha",
+  "slug": "project-alpha",
+  "description": "Workspace for Alpha project",
+  "createdAt": "datetime",
+  "updatedAt": "datetime",
+  "userId": "creator_user_uuid",
+  "user": { ... creator details (basic info) ... }
+}
+```
+
+### Update Workspace Details
+
+```
+PUT /workspaces/{id}
+```
+
+**Description:** Updates the title, slug, or description of a workspace. Requires **`creator`** role.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+
+**Request Body:**
+```json
+{
+  "title": "Updated Project Alpha",
+  "description": "Updated description."
+}
+```
+
+**Response (200 OK)**: Updated workspace details.
+```json
+{
+  "success": true,
+  "workspace": { ... updated workspace details ... }
+}
+```
+
+### Delete Workspace
+
+```
+DELETE /workspaces/{id}
+```
+
+**Description:** Permanently deletes a workspace and all associated data (tasks, team memberships, comments, etc.). Requires **`creator`** role.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+
+**Response (200 OK)**: Success message.
+```json
+{
+  "success": true,
+  "message": "Workspace deleted successfully"
+}
+```
+
+## Team Management
+
+### Get Workspace Team (Paginated)
+
+```
+GET /workspaces/{id}/team
+```
+
+**Description:** Retrieves a paginated list of team members (including their workspace-specific roles) for a specific workspace. Requires the user to have any role (`creator`, `admin`, or `member`) in the workspace.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+**Query Parameters**:
+- `page` (integer, default: 1)
+- `limit` (integer, default: 10)
+
+**Response (200 OK)**: Paginated list of team members with their roles.
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "user_uuid_1",
+      "firstName": "Alice",
+      "lastName": "Smith",
+      "email": "alice@example.com",
+      "username": "alice",
+      "profilePicture": "url_to_picture",
+      "role": "creator" // Role within this workspace
+    },
+    {
+      "id": "user_uuid_2",
+      "firstName": "Bob",
+      "lastName": "Jones",
+      "email": "bob@example.com",
+      "username": "bobj",
+      "profilePicture": "url_to_picture",
+      "role": "admin"
+    },
+    {
+      "id": "user_uuid_3",
+      "firstName": "Charlie",
+      "lastName": "Brown",
+      "email": "charlie@example.com",
+      "username": "cbrown",
+      "profilePicture": "url_to_picture",
+      "role": "member"
+    }
+    // ... more members
+  ],
+  "pagination": {
+    "total": 3,
+    "page": 1,
+    "limit": 10,
+    "totalPages": 1,
+    "hasNextPage": false,
+    "hasPrevPage": false
+  }
+}
+```
+
+### Add Team Member
+
+```
+POST /workspaces/{id}/team
+```
+
+**Description:** Adds an *existing* TaskGid user (specified by email) to the workspace team with the default `member` role. Requires **`creator`** or **`admin`** role in the workspace. For adding users who are not yet registered on TaskGid, use the Invite system.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+
+**Request Body:**
+```json
+{
+  "email": "existing_user@example.com"
+}
+```
+
+**Response (201 Created)**: Success message.
+```json
+{
+  "success": true,
+  "message": "Team member added successfully"
+}
+```
+
+### Remove Team Member
+
+```
+DELETE /workspaces/{id}/team/{userIdToRemove}
+```
+
+**Description:** Removes a user from the workspace team. Requires **`creator`** or **`admin`** role. Note: Admins cannot remove other Admins or the Creator. The Creator cannot be removed.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+- `userIdToRemove` (string, uuid): The ID of the user to remove from the team.
+
+**Response (200 OK)**: Success message.
+```json
+{
+  "success": true,
+  "message": "Team member removed successfully"
+}
+```
+
+## Admin Role Management
+
+### Promote Member to Admin
+
+```
+POST /workspaces/{id}/admins/{userId}
+```
+
+**Description:** Changes a team member's role from `member` to `admin`. Requires **`creator`** role.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+- `userId` (string, uuid): The ID of the `member` user to promote.
+
+**Response (200 OK)**: Success message.
+```json
+{
+  "success": true,
+  "message": "Member promoted to admin successfully"
+}
+```
+
+### Demote Admin to Member
+
+```
+DELETE /workspaces/{id}/admins/{userId}
+```
+
+**Description:** Changes a team member's role from `admin` back to `member`. Requires **`creator`** role. Cannot be used on the Creator.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace.
+- `userId` (string, uuid): The ID of the `admin` user to demote.
+
+**Response (200 OK)**: Success message.
+```json
+{
+  "success": true,
+  "message": "Admin demoted to member successfully"
 }
 ```
 
@@ -613,20 +530,25 @@ POST /tasks/:slug/:id/comments
 ### Invite User to Workspace
 
 ```
-POST /invite
+POST /invites/workspace/{id}
 ```
+
+**Description:** Sends an invitation email (containing a unique, time-limited token) to the specified email address, inviting them to join the workspace. Requires **`creator`** or **`admin`** role in the workspace.
+**Auth Required**: Yes
+**Path Parameters**:
+- `id` (string, uuid): The ID of the workspace to invite the user to.
 
 **Request Body:**
 ```json
 {
-  "email": "newuser@example.com",
-  "slug": "project-alpha"
+  "email": "new_or_existing_user@example.com"
 }
 ```
 
-**Response:**
+**Response (201 Created)**: Success message.
 ```json
 {
+  "success": true,
   "message": "User invited successfully"
 }
 ```
@@ -634,160 +556,176 @@ POST /invite
 ### Accept Invite
 
 ```
-POST /invite/accept
+POST /invites/accept
 ```
+
+**Description:** Accepts a workspace invitation using the token received via email. 
+- If the invited email belongs to an existing user, they are added to the workspace team with the `member` role.
+- If the email does not belong to an existing user, a new placeholder user account is created (with `registrationSource` set to `invite`, a generated username, and a temporary password), and this new user is added to the workspace team with the `member` role. 
+- Placeholder users will need to complete their profile (set first name, last name, and a permanent password) through the `/users/profile` endpoint later.
+**Auth Required**: No (Token serves as authentication)
 
 **Request Body:**
 ```json
 {
-  "token": "invite_token_here"
+  "token": "invite_token_from_email"
 }
 ```
 
-**Response:**
+**Response (200 OK)**: Indicates success and whether a new user account was created.
 ```json
 {
   "success": true,
   "message": "Invite accepted successfully",
-  "workspace": {
-    "id": "uuid",
-    "title": "Project Alpha",
-    "slug": "project-alpha"
-  }
+  "isNewUser": false // or true if a placeholder account was created
 }
 ```
 
-## File Attachment Management
+## Task Management
 
-### Upload Task Attachment
+*(Endpoints follow the pattern: `/workspaces/{id}/tasks` and `/workspaces/{id}/tasks/{taskId}`)*
 
-```
-POST /attachments/tasks/:taskId/attachments
-```
+- **GET `/workspaces/{id}/tasks`**: List tasks (paginated). Requires workspace membership.
+- **POST `/workspaces/{id}/tasks`**: Create a task. Requires workspace membership.
+- **GET `/workspaces/{id}/tasks/{taskId}`**: Get task details. Requires workspace membership.
+- **PUT `/workspaces/{id}/tasks/{taskId}`**: Update task. Requires workspace membership (further restrictions like assignee/creator possible).
+- **DELETE `/workspaces/{id}/tasks/{taskId}`**: Delete task. Requires workspace membership (further restrictions possible).
 
-**Request:**
-- Content-Type: multipart/form-data
-- Authorization: Bearer <token>
+**Authorization Note:** Access to tasks generally requires the user to have any role (`creator`, `admin`, or `member`) in the parent workspace (`{id}`). Specific actions might be restricted further based on roles or user association (e.g., only assignees or creator can update status), although current implementation may allow broader access for simplicity.
 
-**Form Data:**
-- `file`: File to upload (max 10MB)
+## Comment Management
 
-**Response:**
-```json
-{
-  "success": true,
-  "attachment": {
-    "id": "uuid",
-    "filename": "1234567890-abcdef.jpg",
-    "originalname": "image.jpg",
-    "mimetype": "image/jpeg",
-    "size": 102400,
-    "path": "/path/to/file",
-    "url": "/uploads/1234567890-abcdef.jpg",
-    "taskId": "task_uuid",
-    "userId": "user_uuid",
-    "createdAt": "2023-06-26T12:00:00.000Z",
-    "updatedAt": "2023-06-26T12:00:00.000Z"
-  }
-}
-```
+*(Endpoints follow the pattern: `/workspaces/{id}/tasks/{taskId}/comments` and `/workspaces/{id}/tasks/{taskId}/comments/{commentId}`)*
 
-### Upload Comment Attachment
+- **GET `/workspaces/{id}/tasks/{taskId}/comments`**: List comments (paginated). Requires workspace membership.
+- **POST `/workspaces/{id}/tasks/{taskId}/comments`**: Add a comment. Requires workspace membership.
+- **PUT `/workspaces/{id}/tasks/{taskId}/comments/{commentId}`**: Update a comment. Requires user to be the author.
+- **DELETE `/workspaces/{id}/tasks/{taskId}/comments/{commentId}`**: Delete a comment. Requires user to be the author or workspace admin/creator.
 
-```
-POST /attachments/comments/:commentId/attachments
-```
+**Mentions:**
+- When creating or updating comments, you can mention other users who are members of the same workspace by using the `@username` syntax (e.g., `"Hey @bobj, take a look!"`).
+- Mentioned users (excluding the comment author) will receive a real-time notification via Pusher on the `private-user-{userId}` channel with the event name `comment-mention`.
+- The notification payload includes details about the comment, author, task, and workspace.
 
-**Request:**
-- Content-Type: multipart/form-data
-- Authorization: Bearer <token>
+**Authorization Note:** Access to view comments generally requires the user to have any role in the parent workspace. Editing/Deleting is typically restricted to the comment author.
 
-**Form Data:**
-- `file`: File to upload (max 10MB)
+## Attachment Management
 
-**Response:**
-```json
-{
-  "success": true,
-  "attachment": {
-    "id": "uuid",
-    "filename": "1234567890-abcdef.pdf",
-    "originalname": "document.pdf",
-    "mimetype": "application/pdf",
-    "size": 204800,
-    "path": "/path/to/file",
-    "url": "/uploads/1234567890-abcdef.pdf",
-    "commentId": "comment_uuid",
-    "userId": "user_uuid",
-    "createdAt": "2023-06-26T12:00:00.000Z",
-    "updatedAt": "2023-06-26T12:00:00.000Z"
-  }
-}
-```
+*(Endpoints allow uploading, viewing, and deleting files associated with tasks or comments.)*
 
 ### Get Task Attachments
 
 ```
-GET /attachments/tasks/:taskId/attachments
+GET /workspaces/{id}/tasks/{taskId}/attachments
 ```
 
-**Response:**
+**Description:** Retrieves a list of attachments associated with a specific task.
+**Auth Required**: Yes (User must be a member/admin/creator of the workspace)
+**Path Parameters**:
+- `id` (string, uuid): Workspace ID.
+- `taskId` (string, uuid): Task ID.
+
+**Response (200 OK):**
 ```json
 {
   "success": true,
   "attachments": [
     {
-      "id": "uuid",
-      "filename": "1234567890-abcdef.jpg",
-      "originalname": "image.jpg",
+      "id": "attachment_uuid_1",
+      "filename": "storage_provider_key_1.jpg",
+      "originalname": "screenshot.jpg",
       "mimetype": "image/jpeg",
-      "size": 102400,
-      "path": "/path/to/file",
-      "url": "/uploads/1234567890-abcdef.jpg",
+      "size": 153020,
+      "url": "public_url_to_file_1",
+      "storageType": "s3",
       "taskId": "task_uuid",
-      "userId": "user_uuid",
-      "createdAt": "2023-06-26T12:00:00.000Z",
-      "updatedAt": "2023-06-26T12:00:00.000Z"
+      "commentId": null,
+      "userId": "uploader_uuid",
+      "user": { "id": "uploader_uuid", "username": "alice", "firstName": "Alice" },
+      "createdAt": "datetime",
+      "updatedAt": "datetime"
     }
+    // ... more attachments ...
   ]
+}
+```
+
+### Upload Task Attachment
+
+```
+POST /workspaces/{id}/tasks/{taskId}/attachments
+```
+
+**Description:** Uploads a file and attaches it to a specific task.
+**Auth Required**: Yes (User must be a member/admin/creator of the workspace)
+**Path Parameters**:
+- `id` (string, uuid): Workspace ID.
+- `taskId` (string, uuid): Task ID.
+**Request Body:** `multipart/form-data` with a single field:
+- `file`: The file to upload.
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "attachment": { ... details of the created attachment record ... }
 }
 ```
 
 ### Get Comment Attachments
 
 ```
-GET /attachments/comments/:commentId/attachments
+GET /workspaces/{id}/comments/{commentId}/attachments
 ```
 
-**Response:**
+**Description:** Retrieves a list of attachments associated with a specific comment.
+**Auth Required**: Yes (User must be a member/admin/creator of the workspace)
+**Path Parameters**:
+- `id` (string, uuid): Workspace ID (inferred from comment).
+- `commentId` (string, uuid): Comment ID.
+
+**Response (200 OK):** (Similar structure to Get Task Attachments, but `taskId` will be null and `commentId` populated)
 ```json
 {
   "success": true,
-  "attachments": [
-    {
-      "id": "uuid",
-      "filename": "1234567890-abcdef.pdf",
-      "originalname": "document.pdf",
-      "mimetype": "application/pdf",
-      "size": 204800,
-      "path": "/path/to/file",
-      "url": "/uploads/1234567890-abcdef.pdf",
-      "commentId": "comment_uuid",
-      "userId": "user_uuid",
-      "createdAt": "2023-06-26T12:00:00.000Z",
-      "updatedAt": "2023-06-26T12:00:00.000Z"
-    }
-  ]
+  "attachments": [ ... ]
+}
+```
+
+### Upload Comment Attachment
+
+```
+POST /workspaces/{id}/comments/{commentId}/attachments
+```
+
+**Description:** Uploads a file and attaches it to a specific comment.
+**Auth Required**: Yes (User must be a member/admin/creator of the workspace)
+**Path Parameters**:
+- `id` (string, uuid): Workspace ID (inferred from comment).
+- `commentId` (string, uuid): Comment ID.
+**Request Body:** `multipart/form-data` with a single field:
+- `file`: The file to upload.
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "attachment": { ... details of the created attachment record ... }
 }
 ```
 
 ### Delete Attachment
 
 ```
-DELETE /attachments/:attachmentId
+DELETE /attachments/{attachmentId}
 ```
 
-**Response:**
+**Description:** Deletes an attachment record from the database and the corresponding file from the storage provider. Requires the user to be the original uploader OR a workspace `creator` or `admin`.
+**Auth Required**: Yes
+**Path Parameters**:
+- `attachmentId` (string, uuid): The ID of the attachment to delete.
+
+**Response (200 OK):**
 ```json
 {
   "success": true,
@@ -795,50 +733,46 @@ DELETE /attachments/:attachmentId
 }
 ```
 
+## Notification Management
+
+*(Assume endpoints exist: `GET /notifications`, `PUT /notifications/{id}`, `DELETE /notifications/{id}`)*
+
+**Authorization Note:** Users can only access and manage their own notifications.
+
 ## Error Responses
 
-All endpoints may return the following error responses:
+Standard HTTP status codes are used. Common error responses include:
 
-### 400 Bad Request
-
+**400 Bad Request**: Invalid input, validation error, conflicting data.
 ```json
-{
-  "error": "Error message",
-  "success": false
-}
+{ "error": "Specific error message (e.g., Email already exists)", "success": false }
 ```
 
-### 401 Unauthorized
-
+**401 Unauthorized**: Missing, invalid, or expired JWT access token.
 ```json
-{
-  "error": "Unauthorized access",
-  "success": false
-}
+{ "error": "Unauthorized", "success": false }
 ```
 
-### 404 Not Found
-
+**403 Forbidden**: Authenticated user does not have the necessary role/permission for the action.
 ```json
-{
-  "error": "Resource not found",
-  "success": false
-}
+{ "error": "Access denied" or "Only workspace creators can perform this action", "success": false }
 ```
 
-### 500 Server Error
-
+**404 Not Found**: The requested resource (workspace, user, task, etc.) does not exist.
 ```json
-{
-  "error": "Server error message",
-  "success": false
-}
+{ "error": "Workspace not found", "success": false }
 ```
 
-## Data Models
+**500 Internal Server Error**: An unexpected error occurred on the server.
+```json
+{ "error": "Server error occurred", "success": false }
+```
+
+## Data Models (Examples in Responses)
+
+*(These show the typical structure of data returned in responses. Sensitive fields are excluded.)*
 
 ### User
-
 ```json
 {
   "id": "uuid",
@@ -846,101 +780,122 @@ All endpoints may return the following error responses:
   "lastName": "Doe",
   "email": "john@example.com",
   "username": "johndoe",
-  "profilePicture": "url_to_picture"
+  "profilePicture": "url_to_picture",
+  "registrationSource": "self", // or "invite"
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
 }
 ```
 
 ### Workspace
-
 ```json
 {
   "id": "uuid",
   "title": "Project Alpha",
   "slug": "project-alpha",
   "description": "Description of the workspace",
-  "user": {
-    "firstName": "John",
-    "lastName": "Doe"
+  "userId": "creator_user_uuid", // Creator's ID
+  "user": { // Basic creator info
+    "id": "creator_user_uuid",
+    "firstName": "Alice",
+    "lastName": "Smith",
+    "email": "alice@example.com",
+    "profilePicture": "url_to_picture"
   },
-  "team": [
-    {
-      "firstName": "Jane",
-      "lastName": "Smith",
-      "username": "janesmith",
-      "profilePicture": "url_to_picture",
-      "email": "jane@example.com"
-    }
-  ]
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
+  // Note: Team list is fetched separately via /workspaces/{id}/team
+}
+```
+
+### WorkspaceTeamMember (as seen in GET /workspaces/{id}/team)
+```json
+{
+  "id": "user_uuid",
+  "firstName": "Bob",
+  "lastName": "Jones",
+  "email": "bob@example.com",
+  "username": "bobj",
+  "profilePicture": "url_to_picture",
+  "role": "admin" // Role specific to this workspace
 }
 ```
 
 ### Task
-
 ```json
 {
   "id": "uuid",
   "title": "Task Title",
   "description": "Task description",
-  "status": "todo",
-  "priority": "medium",
-  "dueDate": "2023-12-31T00:00:00.000Z",
-  "assignee": {
-    "username": "janesmith",
-    "firstName": "Jane",
-    "lastName": "Smith",
-    "profilePicture": "url_to_picture"
+  "status": "TODO", // e.g., TODO, IN_PROGRESS, DONE
+  "priority": "MEDIUM", // e.g., LOW, MEDIUM, HIGH
+  "dueDate": "iso_date_string_or_null",
+  "workspaceId": "parent_workspace_uuid",
+  "createdById": "creator_user_uuid",
+  "creator": { // Basic info of task creator
+     "id": "creator_user_uuid",
+     "username": "johndoe",
+     // ... other basic fields
   },
-  "user": {
-    "username": "johndoe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "profilePicture": "url_to_picture"
-  }
+  "assignees": [ // Array of assigned users (basic info)
+    {
+       "id": "assignee_user_uuid",
+       "username": "bobj",
+       // ... other basic fields
+    }
+  ],
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
 }
 ```
 
 ### Comment
-
 ```json
 {
   "id": "uuid",
-  "content": "Comment text",
-  "user": {
+  "content": "This is a comment.",
+  "taskId": "parent_task_uuid",
+  "userId": "commenter_user_uuid",
+  "user": { // Basic info of commenter
+    "id": "commenter_user_uuid",
     "username": "johndoe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "profilePicture": "url_to_picture"
+    // ... other basic fields
   },
-  "createdAt": "2023-06-26T12:00:00.000Z",
-  "updatedAt": "2023-06-26T12:00:00.000Z"
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
 }
 ```
 
 ### Attachment
-
 ```json
 {
   "id": "uuid",
-  "filename": "1234567890-abcdef.jpg",
-  "originalname": "image.jpg",
-  "mimetype": "image/jpeg",
-  "size": 102400,
-  "path": "/path/to/file",
-  "url": "/uploads/1234567890-abcdef.jpg",
-  "taskId": "task_uuid",
-  "commentId": "comment_uuid",
-  "userId": "user_uuid",
-  "createdAt": "2023-06-26T12:00:00.000Z",
-  "updatedAt": "2023-06-26T12:00:00.000Z"
+  "filename": "storage_provider_key.ext",
+  "originalname": "original_filename.ext",
+  "mimetype": "mime/type",
+  "size": 123456, // bytes
+  "url": "public_url_to_file",
+  "storageType": "s3", // e.g., local, s3, r2, cloudinary
+  "taskId": "task_uuid_or_null",
+  "commentId": "comment_uuid_or_null",
+  "userId": "uploader_uuid",
+  "user": { // Populated on GET requests
+      "id": "uploader_uuid",
+      "username": "uploader_username",
+      "firstName": "UploaderFirstName"
+   },
+  "createdAt": "datetime",
+  "updatedAt": "datetime"
 }
 ```
 
 ## Implementation Notes
 
-1. **Authentication**: Always include the JWT token in the Authorization header for protected endpoints.
-2. **Error Handling**: Implement proper error handling for all API responses.
-3. **Pagination**: For endpoints that return lists (workspaces, tasks, comments), use the `page` and `limit` query parameters to implement pagination. The response includes pagination metadata to help with navigation.
-4. **Real-time Updates**: Consider implementing WebSocket connections for real-time updates on tasks and comments.
-5. **File Uploads**: For file uploads, use multipart/form-data. The server automatically compresses images to reduce storage costs. Maximum file size is 10MB, and only specific file types are allowed (images, PDFs, and common document formats).
+1.  **Authentication**: Use JWT Bearer tokens for protected endpoints.
+2.  **Authorization**: Permissions are based on workspace roles (`creator`, `admin`, `member`). Check endpoint descriptions for specific role requirements.
+3.  **Error Handling**: Expect standard HTTP status codes and JSON error bodies.
+4.  **Pagination**: Use `page` and `limit` query parameters for list endpoints. Responses include pagination metadata.
+5.  **Invites**: Use the invite flow to add new users to the platform *and* a workspace simultaneously. Use the add team member endpoint for adding *existing* users.
+6.  **File Uploads**: Use multipart/form-data for uploads. Note server-side processing (like image compression) may occur.
 
-This documentation provides a comprehensive overview of the TaskGid API. For any questions or clarifications, please contact the backend team. 
+This documentation provides a comprehensive overview of the TaskGid API reflecting the current implementation. For further details, refer to the OpenAPI specification or contact the development team. 

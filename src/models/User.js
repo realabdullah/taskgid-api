@@ -168,13 +168,19 @@ User.init(
             type: DataTypes.DATE,
             allowNull: true,
         },
-        workspaceId: {
+        invitedBy: {
             type: DataTypes.UUID,
             allowNull: true,
             references: {
-                model: 'workspaces',
+                model: 'users',
                 key: 'id',
             },
+        },
+        registrationSource: {
+            // eslint-disable-next-line new-cap
+            type: DataTypes.ENUM('invite', 'self'),
+            allowNull: false,
+            defaultValue: 'self',
         },
     },
     {
