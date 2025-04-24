@@ -10,32 +10,32 @@ import {generateUsername} from '../utils/usernameGenerator.js';
 import crypto from 'crypto';
 
 const inviteUser = async (req, res) => {
-    const {email} = req.body;
-    const {id: workspaceId} = req.params;
+    const {email, workspaceId} = req.body;
     const inviterUser = req.user;
 
     try {
         const workspace = await Workspace.findByPk(workspaceId);
         if (!workspace) {
-            return res.status(404).json({message: 'Workspace not found'});
+            return res.status(404).json({error: 'Workspace not found'});
         }
 
         const requestorRole = await WorkspaceTeam.findOne({where: {userId: inviterUser.id, workspaceId}});
         if (!requestorRole || !['creator', 'admin'].includes(requestorRole.role)) {
-            return res.status(403).json({message: 'Only workspace admins or the creator can send invites'});
+            return res.status(403).json({error: 'Only workspace admins or the creator can send invites'});
+        }
+
+        const pendingInvite = await Invite.findOne({where: {email, workspaceId, used: false}});
+        console.log('pendingInvite', pendingInvite);
+        if (pendingInvite) {
+            return res.status(400).json({error: 'User already has a pending invite to this workspace'});
         }
 
         const existingUser = await User.findOne({where: {email}});
-
         if (existingUser) {
             const existingMember = await WorkspaceTeam.findOne({where: {userId: existingUser.id, workspaceId}});
             if (existingMember) {
-                return res.status(400).json({message: 'User is already a member of this workspace'});
+                return res.status(400).json({error: 'User is already a member of this workspace'});
             }
-        }
-        const pendingInvite = await Invite.findOne({where: {email, workspaceId, used: false}});
-        if (pendingInvite) {
-            return res.status(400).json({message: 'User already has a pending invite to this workspace'});
         }
 
         const token = jwt.sign(
@@ -66,9 +66,9 @@ const inviteUser = async (req, res) => {
     } catch (error) {
         console.error('Invite User error:', error);
         if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({message: 'Database constraint error (likely duplicate invite attempt).'});
+            return res.status(400).json({error: 'Database constraint error (likely duplicate invite attempt).'});
         }
-        res.status(500).json({message: 'Server error during invitation process'});
+        res.status(500).json({error: 'Server error during invitation process'});
     }
 };
 

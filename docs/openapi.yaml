@@ -109,6 +109,57 @@ components:
             inProgress:
               type: integer
 
+    WorkspaceWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/Workspace'
+        - type: object
+          properties:
+            memberCount:
+              type: integer
+              description: The total number of members in the workspace.
+              example: 5
+            userRole:
+              type: string
+              description: The role of the requesting user within this workspace.
+              enum: [creator, admin, member] # Assuming these roles
+              example: 'admin'
+
+    PendingInvite:
+      type: object
+      properties:
+        invitationId:
+          type: string
+          format: uuid
+          description: The unique ID of the invitation record.
+        token:
+          type: string
+          description: The unique token associated with the invite (used for accept/reject).
+        workspaceTitle:
+          type: string
+          description: The title of the workspace the user is invited to.
+        workspaceDescription:
+          type: string
+          description: The description of the workspace.
+        workspaceSlug:
+          type: string
+          description: The slug of the workspace.
+        invitedBy:
+          # Reference User schema, but mark it as nullable
+          # OpenAPI 3.1 allows nullable keyword directly with type
+          # For 3.0 compatibility oneOf or anyOf might be used
+          nullable: true
+          allOf:
+           - $ref: '#/components/schemas/User'
+          description: Details of the user who sent the invitation (null if system-generated or user deleted).
+        invitedAt:
+          type: string
+          format: date-time
+          description: The timestamp when the invitation was created.
+        expiresAt:
+          type: string
+          format: date-time
+          description: The timestamp when the invitation expires.
+
     Task:
       type: object
       properties:
@@ -249,6 +300,16 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    PaginationInfo:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
 
 paths:
   /auth/register:
@@ -625,6 +686,19 @@ paths:
         - Workspace Management
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number for pagination.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page.
       responses:
         '200':
           description: Workspaces retrieved successfully
@@ -638,7 +712,9 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Workspace'
+                      $ref: '#/components/schemas/WorkspaceWithDetails'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
     post:
       summary: Create workspace
       tags:
@@ -688,6 +764,88 @@ paths:
                   data:
                     $ref: '#/components/schemas/Workspace'
 
+  /workspaces/created:
+    get:
+      summary: Get workspaces created by the user
+      tags:
+        - Workspace Management
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number for pagination.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page.
+      responses:
+        '200':
+          description: Created workspaces retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workspace'
+                  pagination:
+                     $ref: '#/components/schemas/PaginationInfo'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error
+
+  /workspaces/invited:
+    get:
+      summary: Get workspaces the user has been invited to (joined)
+      tags:
+        - Workspace Management
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number for pagination.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page.
+      responses:
+        '200':
+          description: Invited/Joined workspaces retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workspace'
+                  pagination:
+                     $ref: '#/components/schemas/PaginationInfo'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error
+
   /workspaces/{slug}:
     parameters:
       - name: slug
@@ -712,7 +870,13 @@ paths:
                   success:
                     type: boolean
                   data:
-                    $ref: '#/components/schemas/Workspace'
+                    $ref: '#/components/schemas/WorkspaceWithDetails'
+        '401':
+          description: Unauthorized / Access Denied
+        '404':
+          description: Workspace not found
+        '500':
+          description: Server error
     put:
       summary: Update workspace
       tags:
@@ -1414,4 +1578,46 @@ paths:
                   success:
                     type: boolean
                   data:
-                    $ref: '#/components/schemas/Workspace' 
+                    $ref: '#/components/schemas/Workspace'
+
+  # --- New Endpoint: GET /invite/pending ---
+  /invite/pending:
+    get:
+      summary: Get pending workspace invitations for the user
+      tags:
+        - Invites
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Page number for pagination.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page.
+      responses:
+        '200':
+          description: Pending invitations retrieved successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PendingInvite'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationInfo'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Server error 

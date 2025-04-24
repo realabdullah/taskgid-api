@@ -163,6 +163,7 @@ class EmailService {
                     inviterName: inviter.firstName || inviter.username,
                     workspaceName: workspace.title,
                     inviteLink: inviteUrl,
+                    accountName: 'Taskgid',
                     // Add other variables your invite template needs
                 },
             },

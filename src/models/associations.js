@@ -55,6 +55,7 @@ Authn.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 
 // Invite associations
 Invite.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+Invite.belongsTo(User, {foreignKey: 'invitedById', as: 'invitedBy'});
 
 /**
  * Sets up all model associations

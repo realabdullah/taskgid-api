@@ -17,7 +17,7 @@ const CHALLENGE_TIMEOUT = 60000; // 1 minute
 
 // Rate limiting configuration
 export const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 1 * 60 * 1000,
     max: 5, // 5 attempts per window
     message: {error: 'Too many authentication attempts, please try again later', success: false},
     standardHeaders: true,
