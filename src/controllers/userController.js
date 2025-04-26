@@ -248,7 +248,6 @@ export const updateUserProfile = async (req, res) => {
             'username',
             'firstName',
             'lastName',
-            'password',
             'profilePicture',
             'title',
             'about',
@@ -263,6 +262,29 @@ export const updateUserProfile = async (req, res) => {
 
         const updates = {};
         const validationErrors = [];
+        let passwordChangeValidated = false;
+        let newPasswordValue = null;
+
+        const currentPasswordAttempt = req.body.password;
+        const newPasswordAttempt = req.body.newPassword;
+
+        if (newPasswordAttempt) {
+            if (!currentPasswordAttempt) validationErrors.push('Current password is required to set a new password.');
+            else if (typeof newPasswordAttempt !== 'string' || newPasswordAttempt.length < 8) {
+                validationErrors.push('New password must be a string and at least 8 characters long.');
+            } else {
+                if (validationErrors.length === 0) {
+                    const isMatch = await user.isPasswordMatch(currentPasswordAttempt);
+                    if (!isMatch) validationErrors.push('Incorrect current password.');
+                    else {
+                        passwordChangeValidated = true;
+                        newPasswordValue = newPasswordAttempt;
+                    }
+                }
+            }
+        } else if (currentPasswordAttempt) {
+            validationErrors.push('New password is required when providing the current password for a change.');
+        }
 
         for (const field of allowedUpdateFields) {
             if (Object.prototype.hasOwnProperty.call(req.body, field)) {
@@ -287,13 +309,6 @@ export const updateUserProfile = async (req, res) => {
                         if (usernameExists) validationErrors.push('Username already exists.');
                         else updates.username = value;
                     }
-                    break;
-
-                case 'password':
-                    if (value && typeof value === 'string') {
-                        if (value.length < 8) validationErrors.push('New password must be at least 8 characters long.');
-                        else updates.password = value;
-                    } else if (value) validationErrors.push('Invalid password format.');
                     break;
 
                 case 'firstName':
@@ -331,16 +346,18 @@ export const updateUserProfile = async (req, res) => {
         }
 
         if (validationErrors.length > 0) return errorResponse(res, 400, validationErrors.join(' '));
-        if (Object.keys(updates).length === 0) {
+
+        const hasProfileUpdates = Object.keys(updates).length > 0;
+        if (!hasProfileUpdates && !passwordChangeValidated) {
             return successResponse(res, {message: 'No changes detected or applied.', user: user.toJSON()});
         }
 
-        Object.assign(user, updates);
+        if (hasProfileUpdates) Object.assign(user, updates);
+        if (passwordChangeValidated && newPasswordValue) user.password = newPasswordValue;
         await user.save();
 
         return successResponse(res, {message: 'Profile updated successfully', user: user.toJSON()});
     } catch (error) {
-        console.error('Update user profile error:', error);
         if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
             const messages = error.errors.map((e) => e.message);
             return errorResponse(res, 400, messages.join(', '));

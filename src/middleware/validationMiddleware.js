@@ -215,10 +215,17 @@ export const validateUpdateUserProfile = [
         .trim()
         .isLength({max: 50})
         .withMessage('Last name cannot exceed 50 characters.'),
-    body('password')
+    body('newPassword')
         .optional()
         .isLength({min: 8})
         .withMessage('New password must be at least 8 characters long.'),
+    body('password')
+        .custom((value, {req}) => {
+            if (req.body.newPassword && !value) {
+                throw new Error('Current password is required to set a new password.');
+            }
+            return true;
+        }),
     body('profilePicture')
         .optional()
         .trim()
@@ -255,7 +262,7 @@ export const validateUpdateUserProfile = [
                 errors: errors.array().map((err) => ({
                     field: err.param,
                     message: err.msg,
-                    value: err.value,
+                    value: (err.param === 'password' || err.param === 'newPassword') ? undefined : err.value,
                 })),
             });
         }

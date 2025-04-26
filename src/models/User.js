@@ -39,6 +39,16 @@ class User extends Model {
     }
 
     /**
+     * Check if the provided password matches the user's current password.
+     * @param {string} candidatePassword - The password attempt to check.
+     * @return {Promise<boolean>} - True if the password matches, false otherwise.
+     */
+    async isPasswordMatch(candidatePassword) {
+        if (!this.password || typeof candidatePassword !== 'string') return false;
+        return bcrypt.compare(candidatePassword, this.password);
+    }
+
+    /**
      * Convert user instance to JSON, excluding sensitive fields
      * @return {Object} JSON representation of the user
      */
