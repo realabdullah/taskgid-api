@@ -18,11 +18,15 @@ const sendInviteNotification = (userId, workspace, sender, url) => {
 };
 
 const acceptInviteNotification = (workspaceOwner, workspace, user) => {
-    pusher.trigger(`workspace-${workspaceOwner}`, 'workspace-accepted', {
-        title: workspace.title,
-        slug: workspace.slug,
-        user,
-    });
+    try {
+        pusher.trigger(`workspace-${workspaceOwner}`, 'workspace-accepted', {
+            title: workspace.title,
+            slug: workspace.slug,
+            user,
+        });
+    } catch (error) {
+        console.error('Pusher error:', error);
+    }
 };
 
 const sendTaskNotification = (userId, task, sender, url) => {

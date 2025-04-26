@@ -1,19 +1,25 @@
 import express from 'express';
-import {editUser, updateProfilePicture, getUser} from '../controllers/userController.js';
+import {updateUserProfile, getUser} from '../controllers/userController.js';
 import {
-    generateRegistrationOptionsWithAuthn, verifyAuthnResponse, removeAuthn, fetchSavedAuthns,
+    generateRegistrationOptionsWithAuthn, verifyAuthnResponse, removeAuthn, fetchSavedAuthns, authLimiter,
 } from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
+import {validateUpdateUserProfile} from '../middleware/validationMiddleware.js';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
 
-router.get('/get', authMiddleware, getUser);
-router.post('/edit/:username', authMiddleware, editUser);
-router.post('/update-profile-picture', authMiddleware, updateProfilePicture);
-router.get('/add-authn', authMiddleware, generateRegistrationOptionsWithAuthn);
-router.post('/verify-authn', authMiddleware, verifyAuthnResponse);
-router.post('/remove-authn', authMiddleware, removeAuthn);
-router.get('/authns', authMiddleware, fetchSavedAuthns);
+// Apply authentication middleware to all routes
+router.use(authMiddleware);
+
+// User profile routes
+router.get('/profile', getUser);
+router.patch('/profile', validateUpdateUserProfile, updateUserProfile);
+
+// WebAuthn routes with rate limiting
+router.get('/authn/options', authLimiter, generateRegistrationOptionsWithAuthn);
+router.post('/authn/verify', authLimiter, verifyAuthnResponse);
+router.delete('/authn/:id', authLimiter, removeAuthn);
+router.get('/authn', authLimiter, fetchSavedAuthns);
 
 export default router;
