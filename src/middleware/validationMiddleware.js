@@ -191,77 +191,62 @@ export const validateInviteInput = [
     },
 ];
 
-/**
- * Middleware to validate user input
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- * @return {void}
- */
-export const validateUserInput = [
-    // Validate firstName
-    body('firstName')
-        .trim()
-        .isLength({min: 1, max: 50})
-        .withMessage('First name must be between 1 and 50 characters'),
-
-    // Validate lastName
-    body('lastName')
-        .trim()
-        .isLength({min: 1, max: 50})
-        .withMessage('Last name must be between 1 and 50 characters'),
-
-    // Validate username (optional)
+export const validateUpdateUserProfile = [
     body('username')
         .optional()
         .trim()
         .isLength({min: 3, max: 30})
-        .withMessage('Username must be between 3 and 30 characters')
+        .withMessage('Username must be between 3 and 30 characters.')
         .matches(/^[a-zA-Z0-9_-]+$/)
-        .withMessage(
-            'Username can only contain letters, numbers, underscores, and hyphens',
-        ),
-
-    // Validate email (optional)
-    body('email').optional().trim().isEmail().withMessage('Invalid email format'),
-
-    // Check for validation errors
-    (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                errors: errors.array().map((err) => ({
-                    field: err.param,
-                    message: err.msg,
-                })),
-            });
-        }
-        next();
-    },
-];
-
-/**
- * Middleware to validate profile picture input
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- * @return {void}
- */
-export const validateProfilePictureInput = [
-    // Validate profilePicture
-    body('profilePicture')
-        .isBase64()
-        .withMessage('Profile picture must be a valid base64 string')
-        .custom((value) => {
-            // Check if the base64 string starts with a valid image data URL
-            if (!value.startsWith('data:image/')) {
-                throw new Error('Profile picture must be a valid image file');
-            }
+        .withMessage('Username can only contain letters, numbers, underscores (_), and hyphens (-).')
+        .custom(async (value, {req}) => {
+            if (!req.user || value === req.user.username) return true;
+            const existingUser = await User.findOne({where: {username: value}});
+            if (existingUser) throw new Error('Username already exists.');
             return true;
         }),
+    body('firstName')
+        .optional()
+        .trim()
+        .isLength({max: 50})
+        .withMessage('First name cannot exceed 50 characters.'),
+    body('lastName')
+        .optional()
+        .trim()
+        .isLength({max: 50})
+        .withMessage('Last name cannot exceed 50 characters.'),
+    body('password')
+        .optional()
+        .isLength({min: 8})
+        .withMessage('New password must be at least 8 characters long.'),
+    body('profilePicture')
+        .optional()
+        .trim()
+        .custom((value) => {
+            try {
+                new URL(value);
+                return true;
+            } catch (e) {
+                if (value.startsWith('data:image/')) return true;
+                throw new Error('Profile picture must be a valid URL or a data URL (e.g., data:image/png;base64,...).');
+            }
+        }),
+    body('title')
+        .optional({nullable: true})
+        .trim()
+        .isLength({max: 100})
+        .withMessage('Title cannot exceed 100 characters.'),
+    body('about')
+        .optional({nullable: true})
+        .trim()
+        .isLength({max: 1000})
+        .withMessage('About cannot exceed 1000 characters.'),
+    body('location')
+        .optional({nullable: true})
+        .trim()
+        .isLength({max: 100})
+        .withMessage('Location cannot exceed 100 characters.'),
 
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -270,6 +255,7 @@ export const validateProfilePictureInput = [
                 errors: errors.array().map((err) => ({
                     field: err.param,
                     message: err.msg,
+                    value: err.value,
                 })),
             });
         }
@@ -277,13 +263,6 @@ export const validateProfilePictureInput = [
     },
 ];
 
-/**
- * Middleware to validate authentication input
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next function
- * @return {void}
- */
 export const validateAuthInput = [
     // Validate email
     body('email').trim().isEmail().withMessage('Invalid email format'),

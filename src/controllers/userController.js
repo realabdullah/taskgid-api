@@ -217,13 +217,7 @@ export const refresh = async (req, res) => {
     }
 };
 
-/**
- * Placeholder function to retrieve user ID associated with a refresh token.
- * Replace this with your actual refresh token validation and retrieval logic.
- * @param {string} token - The refresh token string.
- * @return {Promise<string|null>} The user ID if found, otherwise null.
- */
-async function getUserIdFromRefreshToken(token) {
+export const getUserIdFromRefreshToken = async (token) => {
     // Example: Find user based on a stored opaque token
     // const storedToken = await RefreshTokenModel.findOne({ where: { token: token } });
     // return storedToken ? storedToken.userId : null;
@@ -233,7 +227,7 @@ async function getUserIdFromRefreshToken(token) {
     );
     // For now, return a placeholder or null, depending on how you want to handle it during development
     return null; // Return null until implemented
-}
+};
 
 export const getUser = async (req, res) => {
     try {
@@ -248,86 +242,109 @@ export const getUser = async (req, res) => {
     }
 };
 
-export const editUser = async (req, res) => {
+export const updateUserProfile = async (req, res) => {
     try {
-        const user = await User.findByPk(req.user.id);
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
+        const allowedUpdateFields = [
+            'username',
+            'firstName',
+            'lastName',
+            'password',
+            'profilePicture',
+            'title',
+            'about',
+            'location',
+        ];
 
-        const username = req.sanitize(req.body.username);
-        const firstName = req.sanitize(req.body.firstName);
-        const lastName = req.sanitize(req.body.lastName);
-        const password = req.body.password;
+        const userId = req.user.id;
+        if (!userId) return errorResponse(res, 401, 'Authentication required.');
 
-        // Input validation
-        if (!username || !firstName || !lastName) {
-            return errorResponse(
-                res,
-                400,
-                'Username, first name, and last name are required',
-            );
-        }
+        const user = await User.findByPk(userId);
+        if (!user) return errorResponse(res, 404, 'User not found');
 
-        // Check username uniqueness
-        if (username !== user.username) {
-            const usernameExists = await User.findOne({where: {username}});
-            if (usernameExists) {
-                return errorResponse(res, 400, 'Username already exists');
+        const updates = {};
+        const validationErrors = [];
+
+        for (const field of allowedUpdateFields) {
+            if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+                let value = req.body[field];
+
+                const nullableFields = ['title', 'about', 'location'];
+                if (value === null && nullableFields.includes(field)) {
+                    updates[field] = null;
+                    continue;
+                }
+
+                value = req.sanitize(value);
+
+                switch (field) {
+                case 'username':
+                    if (typeof value !== 'string' || !value) {
+                        validationErrors.push('Username cannot be empty.');
+                    } else if (value.length < 3 || value.length > 30) {
+                        validationErrors.push('Username must be between 3 and 30 characters.');
+                    } else if (value !== user.username) {
+                        const usernameExists = await User.findOne({where: {username: value}});
+                        if (usernameExists) validationErrors.push('Username already exists.');
+                        else updates.username = value;
+                    }
+                    break;
+
+                case 'password':
+                    if (value && typeof value === 'string') {
+                        if (value.length < 8) validationErrors.push('New password must be at least 8 characters long.');
+                        else updates.password = value;
+                    } else if (value) validationErrors.push('Invalid password format.');
+                    break;
+
+                case 'firstName':
+                case 'lastName':
+                    if (typeof value === 'string') updates[field] = value;
+                    else validationErrors.push(`${field} must be a string.`);
+                    break;
+
+                case 'profilePicture':
+                    if (typeof value === 'string' && value !== '') {
+                        try {
+                            if (field === 'profilePicture' && value.startsWith('data:image/')) {
+                                updates[field] = value;
+                            } else {
+                                new URL(value);
+                                updates[field] = value;
+                            }
+                        } catch (e) {
+                            validationErrors.push(`Invalid URL format for ${field}.`);
+                        }
+                    } else validationErrors.push(`${field} must be a string (URL).`);
+                    break;
+
+                case 'title':
+                case 'about':
+                case 'location':
+                    if (typeof value === 'string') updates[field] = value;
+                    else if (value !== null) validationErrors.push(`${field} must be a string.`);
+                    break;
+
+                default:
+                    console.warn(`Unhandled allowed field: ${field}`);
+                }
             }
         }
 
-        // Update user fields
-        if (password) {
-            if (password.length < 8) {
-                return errorResponse(
-                    res,
-                    400,
-                    'Password must be at least 8 characters long',
-                );
-            }
-            user.password = password;
+        if (validationErrors.length > 0) return errorResponse(res, 400, validationErrors.join(' '));
+        if (Object.keys(updates).length === 0) {
+            return successResponse(res, {message: 'No changes detected or applied.', user: user.toJSON()});
         }
 
-        user.firstName = firstName;
-        user.lastName = lastName;
-        user.username = username;
-
-        await user.save();
-        return successResponse(res, {user});
-    } catch (error) {
-        console.error('Edit user error:', error);
-        return errorResponse(res, 500, 'Failed to update user');
-    }
-};
-
-export const updateProfilePicture = async (req, res) => {
-    try {
-        const user = await User.findByPk(req.user.id);
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
-
-        // Input validation
-        if (!req.body.profile_picture) {
-            return errorResponse(res, 400, 'Profile picture URL is required');
-        }
-
-        // Validate URL format
-        try {
-            new URL(req.body.profile_picture);
-        } catch (e) {
-            return errorResponse(res, 400, 'Invalid profile picture URL');
-        }
-
-        user.profilePicture = req.sanitize(req.body.profile_picture);
+        Object.assign(user, updates);
         await user.save();
 
-        return successResponse(res, {
-            message: 'Profile picture updated successfully',
-        });
+        return successResponse(res, {message: 'Profile updated successfully', user: user.toJSON()});
     } catch (error) {
-        console.error('Update profile picture error:', error);
-        return errorResponse(res, 500, 'Failed to update profile picture');
+        console.error('Update user profile error:', error);
+        if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+            const messages = error.errors.map((e) => e.message);
+            return errorResponse(res, 400, messages.join(', '));
+        }
+        return errorResponse(res, 500, 'Failed to update profile');
     }
 };
