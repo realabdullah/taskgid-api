@@ -76,52 +76,45 @@ const acceptInvite = async (req, res) => {
     const {token} = req.body;
 
     if (!token) {
-        return res.status(400).json({message: 'Invite token is required', success: false});
+        return res.status(400).json({error: 'Invite token is required', success: false});
     }
 
     try {
-        // 1. Verify JWT token & find Invite record
         let decoded;
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET);
         } catch (err) {
-            return res.status(401).json({message: 'Invalid or expired invite token', success: false});
+            return res.status(401).json({error: 'Invalid or expired invite token', success: false});
         }
 
         const invite = await Invite.findOne({where: {token, used: false}});
         if (!invite) {
-            return res.status(404).json({message: 'Invite not found or already used', success: false});
+            return res.status(404).json({error: 'Invite not found or already used', success: false});
         }
 
         const {email, workspaceId} = decoded;
 
-        // 2. Find Workspace
         const workspace = await Workspace.findByPk(workspaceId, {
             include: [{model: User, as: 'user', attributes: ['id', 'firstName']}],
         });
         if (!workspace) {
-            return res.status(404).json({message: 'Associated workspace not found', success: false});
+            return res.status(404).json({error: 'Associated workspace not found', success: false});
         }
 
-        // 3. Find or Create User
         let user = await User.findOne({where: {email}});
         let isNewUser = false;
 
         if (user) {
-            // Existing User Flow
-            // Check if already a member of this workspace
             const existingMember = await WorkspaceTeam.findOne({
                 where: {userId: user.id, workspaceId: workspace.id},
             });
 
             if (existingMember) {
-                // Already a member, just mark invite used
                 invite.used = true;
                 await invite.save();
                 return res.status(200).json({success: true, message: 'Already a member of this workspace', isNewUser});
             }
         } else {
-            // New User Flow - Create a placeholder user
             isNewUser = true;
             const tempPassword = crypto.randomBytes(16).toString('hex');
             const generatedUsername = await generateUsername(email);
@@ -135,32 +128,28 @@ const acceptInvite = async (req, res) => {
             });
         }
 
-        // 4. Add user to Workspace Team
         await WorkspaceTeam.create({
             userId: user.id,
             workspaceId: workspace.id,
         });
 
-        // 5. Mark invite as used
         invite.used = true;
         await invite.save();
 
-        // 6. Send notification to workspace owner (optional)
         if (workspace.user) {
             acceptInviteNotification(workspace.user.id, workspace, user);
         }
 
-        // Respond indicating success and if the user was newly created
         res.status(200).json({success: true, message: 'Invite accepted successfully', isNewUser});
     } catch (error) {
         console.error('Accept invite error:', error);
         if (error.name === 'SequelizeUniqueConstraintError') {
             return res.status(400).json({
-                message: 'Failed due to data conflict (e.g., username). Please try again or contact support.',
+                error: 'Failed due to data conflict (e.g., username). Please try again or contact support.',
                 success: false,
             });
         }
-        res.status(500).json({message: 'Failed to accept invite due to server error', success: false});
+        res.status(500).json({error: 'Failed to accept invite due to server error', success: false});
     }
 };
 
