@@ -8,23 +8,21 @@ import {isoBase64URL} from '@simplewebauthn/server/helpers';
 import Authn from '../models/Authn.js';
 import User from '../models/User.js';
 import rateLimit from 'express-rate-limit';
+import {UAParser} from 'ua-parser-js';
 import 'dotenv/config';
 import Auth from '../utils/auth.js';
 
-// Security constants
 const MAX_DEVICES_PER_USER = 5;
 const CHALLENGE_TIMEOUT = 60000; // 1 minute
 
-// Rate limiting configuration
 export const authLimiter = rateLimit({
     windowMs: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 1 * 60 * 1000,
-    max: 5, // 5 attempts per window
+    max: 5,
     message: {error: 'Too many authentication attempts, please try again later', success: false},
     standardHeaders: true,
     legacyHeaders: false,
 });
 
-// Environment variables with validation
 const rpName = process.env.RPNAME;
 const rpId = process.env.RPDOMAIN;
 const rpOrigin = process.env.RPORIGIN;
@@ -33,19 +31,15 @@ if (!rpName || !rpId || !rpOrigin) {
     throw new Error('Missing required environment variables for WebAuthn configuration');
 }
 
-// Helper for standardized error responses
 const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
+const successResponse = (res, data, statusCode = 200) =>
+    res.status(statusCode).json({...data, success: true});
 
 export const generateRegistrationOptionsWithAuthn = async (req, res) => {
     try {
-        // Input validation
-        if (!req.user || !req.user.id) {
-            return errorResponse(res, 401, 'User not authenticated');
-        }
+        if (!req.user || !req.user.id) return errorResponse(res, 401, 'User not authenticated');
 
         const savedAuthns = await Authn.findAll({where: {userId: req.user.id}});
-
-        // Check device limit
         if (savedAuthns && savedAuthns.length >= MAX_DEVICES_PER_USER) {
             return errorResponse(res, 400, `Maximum number of devices (${MAX_DEVICES_PER_USER}) reached`);
         }
@@ -59,89 +53,76 @@ export const generateRegistrationOptionsWithAuthn = async (req, res) => {
         const options = await generateRegistrationOptions({
             rpName,
             rpID: rpId,
-            userID: req.user.email,
+            userID: req.user.id,
             userName: req.user.username,
             timeout: CHALLENGE_TIMEOUT,
-            attestationType: 'direct',
+            attestationType: 'none',
             authenticatorSelection: {
-                userVerification: 'required',
-                residentKey: 'required',
+                userVerification: 'preferred',
+                residentKey: 'preferred',
+                authenticatorAttachment: 'platform',
             },
-            authenticatorAttachment: 'cross-platform',
             excludeCredentials,
         });
 
-        // Store challenge with timestamp
         req.user.challenge = options.challenge;
         req.user.challengeTimestamp = Date.now();
         await req.user.save();
 
         return successResponse(res, {options});
     } catch (error) {
-        console.error('Registration options generation error:', error);
         return errorResponse(res, 500, 'Failed to generate registration options');
     }
 };
 
 export const verifyAuthnResponse = async (req, res) => {
     try {
-        const {credential, expectedChallenge, expectedOrigin, expectedRPID, device} = req.body;
-
-        // Input validation
-        if (!credential || !expectedChallenge || !expectedOrigin || !expectedRPID || !device) {
-            return errorResponse(res, 400, 'Missing required fields');
-        }
-
-        // Retrieve user and verify challenge before verification
         const user = await User.findByPk(req.user.id);
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
+        if (!user) return errorResponse(res, 404, 'User not found');
 
-        // Verify the credential
         const verification = await verifyRegistrationResponse({
-            credential,
-            expectedChallenge,
-            expectedOrigin,
-            expectedRPID,
+            response: req.body,
+            expectedChallenge: req.user.challenge,
+            expectedOrigin: rpOrigin,
+            expectedRPID: rpId,
         });
 
-        if (!verification.verified) {
-            return errorResponse(res, 400, 'Verification failed');
+        if (!verification.verified) return errorResponse(res, 400, 'Verification failed');
+
+        const {registrationInfo} = verification;
+        const {credentialID, credentialPublicKey, counter} = registrationInfo;
+
+        const base64CredentialID = isoBase64URL.fromBuffer(credentialID);
+        const base64PublicKey = isoBase64URL.fromBuffer(credentialPublicKey);
+
+        const existingDevice = await Authn.findOne({where: {userId: user.id, credentialID: base64CredentialID}});
+        if (existingDevice) {
+            return errorResponse(res, 400, 'This device or security key is already registered.');
         }
 
-        // Save the credential
+        const userAgentString = req.headers['user-agent'];
+        const parser = new UAParser(userAgentString);
+        const deviceInfo = parser.getDevice();
+
         await Authn.create({
-            credentialID: isoBase64URL.fromBuffer(verification.registrationInfo.credentialID),
-            credentialPublicKey: isoBase64URL.fromBuffer(verification.registrationInfo.credentialPublicKey),
-            counter: verification.registrationInfo.counter,
-            transports: credential.transport || ['internal'],
-            device: req.sanitize(device),
-            userId: user.id,
+            device: {
+                type: deviceInfo.type || ['Macintosh'].includes(deviceInfo.model) ? 'desktop' : 'mobile',
+                vendor: deviceInfo.vendor || null,
+                model: deviceInfo.model || null,
+            },
+            credentialPublicKey: base64PublicKey,
+            credentialID: base64CredentialID,
+            transports: registrationInfo.transports || ['internal'],
+            counter,
+            userId: req.user.id,
         });
 
-        // Clear the challenge after successful registration
         user.challenge = null;
         user.challengeTimestamp = null;
         await user.save();
 
-        // Generate tokens using Auth utility
-        const tokens = await Auth.generateTokenPair(user);
-
-        // Set refresh token cookie
-        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
-
-        // Send response (excluding refresh token from body)
-        return successResponse(res, {
-            user,
-            accessToken: {
-                token: tokens.accessToken,
-                expiresIn: tokens.expiresIn,
-            },
-            message: 'Authenticator registered successfully',
-        });
+        return successResponse(res, {message: 'Authenticator registered successfully'});
     } catch (error) {
-        console.error('Verification error:', error);
         return errorResponse(res, 500, 'Verification failed');
     }
 };
@@ -150,84 +131,59 @@ export const requestLoginWithAuthn = async (req, res) => {
     try {
         const {email} = req.body;
 
-        // Input validation
-        if (!email) {
-            return errorResponse(res, 400, 'Email is required');
-        }
+        if (!email) return errorResponse(res, 400, 'Email is required');
 
-        const user = await User.findOne({where: {email}});
-        if (!user) {
-            return errorResponse(res, 404, 'User not found');
-        }
+        const user = await User.findOne({
+            where: {email},
+            include: [{model: Authn, as: 'authns'}],
+        });
 
-        const savedAuthns = await Authn.findAll({where: {userId: user.id}});
-        if (!savedAuthns || savedAuthns.length === 0) {
-            return errorResponse(res, 400, 'No authenticators registered for this user');
+        if (!user || !user.authns || user.authns.length === 0) {
+            return errorResponse(res, 401, 'Authentication failed.');
         }
 
         const options = await generateAuthenticationOptions({
             rpID: rpId,
-            allowCredentials: savedAuthns.map((cred) => ({
-                id: isoBase64URL.toBuffer(cred.credentialID),
-                type: 'public-key',
-                transports: cred.transports || ['internal'],
+            allowCredentials: user.authns.map((cred) => ({
+                id: cred.credentialID,
+                transports: cred.transports,
             })),
             userVerification: 'required',
             timeout: CHALLENGE_TIMEOUT,
         });
 
-        // Store challenge with timestamp
         user.challenge = options.challenge;
         user.challengeTimestamp = Date.now();
         await user.save();
 
         return successResponse(res, {options});
     } catch (error) {
-        console.error('Authentication options generation error:', error);
         return errorResponse(res, 500, 'Failed to generate authentication options');
     }
 };
 
 export const loginWithAuthn = async (req, res) => {
     try {
-        const {credential, expectedChallenge, expectedOrigin, expectedRPID} = req.body;
+        const {id, ...restBody} = req.body;
 
-        // Input validation
-        if (!credential || !expectedChallenge || !expectedOrigin || !expectedRPID) {
-            return errorResponse(res, 400, 'Missing required fields');
-        }
+        if (!id) return errorResponse(res, 401, 'Authentication failed.');
 
-        // Find the authenticator first to get public key and counter
-        const authn = await Authn.findOne({where: {credentialID: credential.id}});
-        if (!authn) {
-            return errorResponse(res, 400, 'Authenticator not found');
-        }
+        const authn = await Authn.findOne({where: {credentialID: id}});
+        if (!authn) return errorResponse(res, 401, 'Authentication failed.');
 
-        // Get the associated user
         const user = await User.findByPk(authn.userId);
-        if (!user) {
-            return errorResponse(res, 404, 'User associated with authenticator not found');
-        }
+        if (!user) return errorResponse(res, 401, 'Authentication failed.');
 
-        // Verify challenge before verification
-        // if (user.challenge !== expectedChallenge) {
-        //     return errorResponse(res, 400, 'Challenge mismatch');
-        // }
-        // Optional: Check challenge timestamp
-        // if (Date.now() - user.challengeTimestamp > CHALLENGE_TIMEOUT) {
-        //     return errorResponse(res, 400, 'Challenge timed out');
-        // }
-
-        // Verify the credential
         const verification = await verifyAuthenticationResponse({
-            credential,
+            response: {id, ...restBody},
             expectedChallenge: user.challenge,
-            expectedOrigin,
-            expectedRPID,
-            authenticator: {
-                credentialPublicKey: isoBase64URL.toBuffer(authn.credentialPublicKey),
-                credentialID: isoBase64URL.toBuffer(authn.credentialID),
-                counter: authn.counter,
+            expectedOrigin: rpOrigin,
+            expectedRPID: rpId,
+            credential: {
+                id: authn.credentialID,
+                counter: Number(authn.counter),
+                publicKey: isoBase64URL.toBuffer(authn.credentialPublicKey),
+                transports: authn.transports,
             },
         });
 
@@ -235,34 +191,23 @@ export const loginWithAuthn = async (req, res) => {
             return errorResponse(res, 400, 'Authentication verification failed');
         }
 
-        // Update counter
-        authn.counter = verification.authenticationInfo.newCounter;
-        await authn.save();
+        await Promise.all([
+            authn.update({counter: verification.authenticationInfo.newCounter}),
+            user.update({challenge: null, challengeTimestamp: null}),
+        ]);
 
-        // Clear the challenge after successful login
-        user.challenge = null;
-        user.challengeTimestamp = null;
-        await user.save();
-
-        // Generate tokens using Auth utility
         const tokens = await Auth.generateTokenPair(user);
-
-        // Set refresh token cookie
         res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
 
-        // Send response (excluding refresh token from body)
         return successResponse(res, {
             user,
-            accessToken: {
-                token: tokens.accessToken,
-                expiresIn: tokens.expiresIn,
-            },
-            message: 'Login successful',
+            accessToken: {token: tokens.accessToken, expiresIn: tokens.expiresIn},
         });
     } catch (error) {
-        console.error('Login with Authn error:', error);
-        // Check for specific verification errors
-        if (error.message.includes('Verification failed') || error.message.includes('Authenticator not found')) {
+        if (
+            error.message.includes('Verification failed') ||
+        error.message.includes('Authenticator not found')
+        ) {
             return errorResponse(res, 401, 'Authentication failed: ' + error.message);
         }
         return errorResponse(res, 500, 'Login failed due to an internal error.');
@@ -273,37 +218,27 @@ export const removeAuthn = async (req, res) => {
     try {
         const {credentialID} = req.body;
 
-        // Input validation
-        if (!credentialID) {
-            return errorResponse(res, 400, 'Credential ID is required');
-        }
+        if (!credentialID) return errorResponse(res, 400, 'Credential ID is required');
 
-        const authn = await Authn.findOne({
-            where: {
-                credentialID,
-                userId: req.user.id,
-            },
-        });
+        const authn = await Authn.findOne({where: {credentialID, userId: req.user.id}});
 
-        if (!authn) {
-            return errorResponse(res, 404, 'Authenticator not found');
-        }
-
+        if (!authn) return errorResponse(res, 404, 'Authenticator not found');
         await authn.destroy();
 
         return successResponse(res, {message: 'Authenticator removed successfully'});
     } catch (error) {
-        console.error('Remove authenticator error:', error);
         return errorResponse(res, 500, 'Failed to remove authenticator');
     }
 };
 
 export const fetchSavedAuthns = async (req, res) => {
     try {
-        const savedAuthns = await Authn.find({user: req.user.id});
-        return successResponse(res, {authns: savedAuthns});
+        const userId = req.user?.id;
+        if (!userId) return errorResponse(res, 401, 'User not authenticated');
+
+        const savedAuthns = await Authn.findAll({where: {userId: req.user.id}});
+        return successResponse(res, {authns: savedAuthns || []});
     } catch (error) {
-        console.error('Fetch devices error:', error);
         return errorResponse(res, 500, 'Failed to fetch devices');
     }
 };

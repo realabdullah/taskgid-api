@@ -10,11 +10,9 @@ import {
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {Op, Sequelize} from 'sequelize';
 
-// Helper for standardized error responses
 const errorResponse = (res, status, message) =>
     res.status(status).json({error: message, success: false});
 
-// Helper function to find workspace by slug and handle not found/access denied
 async function findWorkspaceBySlugAndCheckAccess(
     slug,
     userId,
@@ -22,7 +20,6 @@ async function findWorkspaceBySlugAndCheckAccess(
 ) {
     const workspace = await Workspace.findOne({
         where: {slug},
-        // Optionally include owner if needed for checks
         include: [{model: User, as: 'user', attributes: ['id']}],
     });
 
@@ -66,7 +63,6 @@ const getMemberCounts = async (workspaceIds) => {
             counts.map((item) => [item.workspaceId, parseInt(item.count, 10)]),
         );
     } catch (error) {
-        console.error('Error fetching member counts:', error);
         throw new Error('Failed to fetch member counts');
     }
 };
@@ -112,16 +108,21 @@ const fetchCreatedWorkspaces = async (userId, {limit, offset}) => {
 };
 
 const fetchInvitedWorkspaces = async (userId, {limit, offset}) => {
-    const membershipWhereCondition = {userId: userId, role: {[Op.ne]: 'creator'}};
+    const membershipWhereCondition = {
+        userId: userId,
+        role: {[Op.ne]: 'creator'},
+    };
 
     const totalCount = await Workspace.count({
-        include: [{
-            model: WorkspaceTeam,
-            as: 'teamMembership',
-            attributes: [],
-            where: membershipWhereCondition,
-            required: true,
-        }],
+        include: [
+            {
+                model: WorkspaceTeam,
+                as: 'teamMembership',
+                attributes: [],
+                where: membershipWhereCondition,
+                required: true,
+            },
+        ],
     });
     if (totalCount === 0) return {count: 0, rows: []};
 
@@ -140,7 +141,14 @@ const fetchInvitedWorkspaces = async (userId, {limit, offset}) => {
             {
                 model: User,
                 as: 'user',
-                attributes: ['id', 'firstName', 'lastName', 'email', 'username', 'profilePicture'],
+                attributes: [
+                    'id',
+                    'firstName',
+                    'lastName',
+                    'email',
+                    'username',
+                    'profilePicture',
+                ],
             },
         ],
         limit,
@@ -167,13 +175,15 @@ const fetchAllMemberWorkspaces = async (userId, {limit, offset}) => {
     const membershipWhereCondition = {userId: userId};
 
     const totalCount = await Workspace.count({
-        include: [{
-            model: WorkspaceTeam,
-            as: 'teamMembership',
-            attributes: [],
-            where: membershipWhereCondition,
-            required: true,
-        }],
+        include: [
+            {
+                model: WorkspaceTeam,
+                as: 'teamMembership',
+                attributes: [],
+                where: membershipWhereCondition,
+                required: true,
+            },
+        ],
     });
 
     if (totalCount === 0) return {count: 0, rows: []};
@@ -193,7 +203,14 @@ const fetchAllMemberWorkspaces = async (userId, {limit, offset}) => {
             {
                 model: User,
                 as: 'user',
-                attributes: ['id', 'firstName', 'lastName', 'email', 'username', 'profilePicture'],
+                attributes: [
+                    'id',
+                    'firstName',
+                    'lastName',
+                    'email',
+                    'username',
+                    'profilePicture',
+                ],
             },
         ],
         limit,
@@ -237,21 +254,16 @@ export const getWorkspaces = async (req, res) => {
         fetchFunction = fetchAllMemberWorkspaces;
         break;
     default:
-        console.warn(`Unknown workspace type requested: ${type}. Defaulting to 'all'.`);
         fetchFunction = fetchAllMemberWorkspaces;
         operationType = type;
         break;
     }
 
     try {
-        console.log(`Fetching '${operationType}' workspaces for user ${userId} (Page: ${page}, Limit: ${limit})`);
         const {count, rows} = await fetchFunction(userId, {limit, offset});
-
-        console.log(`Successfully fetched ${rows.length} workspaces (Total: ${count}) for type '${operationType}'`);
 
         res.json(createPaginatedResponse(rows, count, page, limit));
     } catch (error) {
-        console.error(`Error fetching '${operationType}' workspaces for user ${userId}:`, error);
         const message = error.message.startsWith('Failed to fetch') ?
             error.message :
             `Failed to fetch ${operationType} workspaces.`;
@@ -273,12 +285,10 @@ export const getWorkspace = async (req, res) => {
             return errorResponse(res, error.status, error.message);
         }
 
-        // Fetch member count
         const memberCount = await WorkspaceTeam.count({
             where: {workspaceId: workspace.id},
         });
 
-        // Refetch with full details if needed, or ensure initial fetch had them
         const detailedWorkspace = await Workspace.findByPk(workspace.id, {
             include: [
                 {
@@ -295,17 +305,14 @@ export const getWorkspace = async (req, res) => {
             ],
         });
 
-        // Combine details, role, and member count
         const workspaceDetails = {
             ...detailedWorkspace.toJSON(),
-            userRole: role, // Role determined by findWorkspaceBySlugAndCheckAccess
+            userRole: role,
             memberCount: memberCount,
         };
 
         res.json(workspaceDetails);
     } catch (err) {
-    // Renamed 'error' variable to 'err' to avoid conflict
-        console.error('Error fetching workspace:', err);
         return errorResponse(res, 500, 'Failed to fetch workspace');
     }
 };
@@ -327,7 +334,7 @@ export const getWorkspaceTeam = async (req, res) => {
 
         const {count, rows: teamMemberships} =
       await WorkspaceTeam.findAndCountAll({
-          where: {workspaceId: workspace.id}, // Use workspace.id here
+          where: {workspaceId: workspace.id},
           include: [
               {
                   model: User,
@@ -355,7 +362,6 @@ export const getWorkspaceTeam = async (req, res) => {
 
         res.json(createPaginatedResponse(team, count, page, limit));
     } catch (err) {
-        console.error('Error fetching workspace team:', err);
         return errorResponse(res, 500, 'Failed to fetch workspace team');
     }
 };
@@ -366,14 +372,12 @@ export const updateWorkspace = async (req, res) => {
     const payload = req.body;
 
     try {
-    // Find by slug, but don't need role check here, just ownership
         const workspace = await Workspace.findOne({where: {slug}});
 
         if (!workspace) {
             return errorResponse(res, 404, 'Workspace not found');
         }
 
-        // Check ownership
         if (workspace.userId !== userId) {
             return errorResponse(
                 res,
@@ -382,7 +386,6 @@ export const updateWorkspace = async (req, res) => {
             );
         }
 
-        // Check if new slug is provided and different, and if it already exists
         if (payload.slug && payload.slug !== workspace.slug) {
             const slugExists = await Workspace.count({
                 where: {slug: payload.slug},
@@ -398,7 +401,6 @@ export const updateWorkspace = async (req, res) => {
 
         await workspace.update(payload);
 
-        // Refetch by ID to include associations
         const updatedWorkspace = await Workspace.findByPk(workspace.id, {
             include: [
                 {
@@ -417,7 +419,6 @@ export const updateWorkspace = async (req, res) => {
 
         res.json({success: true, workspace: updatedWorkspace});
     } catch (err) {
-        console.error('Update workspace error:', err);
         return errorResponse(res, 500, err.message || 'Failed to update workspace');
     }
 };
@@ -444,7 +445,6 @@ export const deleteWorkspace = async (req, res) => {
         await workspace.destroy();
         res.json({success: true, message: 'Workspace deleted successfully'});
     } catch (err) {
-        console.error('Delete workspace error:', err);
         return errorResponse(res, 500, 'Failed to delete workspace');
     }
 };
@@ -503,7 +503,6 @@ export const addNewWorkspace = async (req, res) => {
 
         res.status(201).json({success: true, workspace: populatedWorkspace});
     } catch (error) {
-        console.error('Add workspace error:', error);
         return errorResponse(
             res,
             500,
@@ -518,7 +517,6 @@ export const addTeamMember = async (req, res) => {
     const {email} = req.body;
 
     try {
-    // Find workspace first to get its ID
         const workspace = await Workspace.findOne({
             where: {slug},
             attributes: ['id'],
@@ -526,7 +524,7 @@ export const addTeamMember = async (req, res) => {
         if (!workspace) {
             return errorResponse(res, 404, 'Workspace not found');
         }
-        const workspaceId = workspace.id; // Use ID for internal checks
+        const workspaceId = workspace.id;
 
         const requestorRole = await getUserRoleInWorkspace(
             requestorId,
@@ -558,7 +556,7 @@ export const addTeamMember = async (req, res) => {
         }
 
         await WorkspaceTeam.create({
-            workspaceId, // Use ID here
+            workspaceId,
             userId: userToAdd.id,
             role: 'member',
         });
@@ -567,7 +565,6 @@ export const addTeamMember = async (req, res) => {
             .status(201)
             .json({success: true, message: 'Team member added successfully'});
     } catch (err) {
-        console.error('Add team member error:', err);
         return errorResponse(res, 500, 'Failed to add team member');
     }
 };
@@ -580,9 +577,9 @@ export const removeTeamMember = async (req, res) => {
         const workspace = await Workspace.findOne({
             where: {slug},
             attributes: ['id', 'userId'],
-        }); // Need owner ID too
+        });
         if (!workspace) return errorResponse(res, 404, 'Workspace not found');
-        const workspaceId = workspace.id; // Use ID for internal checks
+        const workspaceId = workspace.id;
 
         const requestorRole = await getUserRoleInWorkspace(
             requestorId,
@@ -606,7 +603,6 @@ export const removeTeamMember = async (req, res) => {
         }
 
         if (userIdToRemove === workspace.userId) {
-            // Check against owner ID from workspace object
             return errorResponse(res, 400, 'Cannot remove the workspace creator');
         }
 
@@ -615,21 +611,19 @@ export const removeTeamMember = async (req, res) => {
         }
 
         const deletedCount = await WorkspaceTeam.destroy({
-            where: {workspaceId, userId: userIdToRemove}, // Use ID here
+            where: {workspaceId, userId: userIdToRemove},
         });
         if (deletedCount === 0) {
-            // This case should technically be covered by !targetRole check above, but keep for safety
             return errorResponse(res, 404, 'Team member not found in this workspace');
         }
         res.json({success: true, message: 'Team member removed successfully'});
     } catch (err) {
-        console.error('Remove team member error:', err);
         return errorResponse(res, 500, 'Failed to remove team member');
     }
 };
 
 export const promoteToAdmin = async (req, res) => {
-    const {slug, userId: targetUserId} = req.params; // targetUserId comes from path param
+    const {slug, userId: targetUserId} = req.params;
     const requestorId = req.user.id;
 
     try {
@@ -638,7 +632,7 @@ export const promoteToAdmin = async (req, res) => {
             attributes: ['id', 'userId'],
         });
         if (!workspace) return errorResponse(res, 404, 'Workspace not found');
-        const workspaceId = workspace.id; // Use ID for internal checks
+        const workspaceId = workspace.id;
 
         if (workspace.userId !== requestorId) {
             return errorResponse(
@@ -649,7 +643,7 @@ export const promoteToAdmin = async (req, res) => {
         }
 
         const teamMember = await WorkspaceTeam.findOne({
-            where: {workspaceId, userId: targetUserId}, // Use ID here
+            where: {workspaceId, userId: targetUserId},
         });
         if (!teamMember) {
             return errorResponse(res, 404, 'User is not a member of this workspace');
@@ -667,13 +661,12 @@ export const promoteToAdmin = async (req, res) => {
             message: 'Member promoted to admin successfully',
         });
     } catch (err) {
-        console.error('Promote admin error:', err);
         return errorResponse(res, 500, 'Failed to promote member to admin');
     }
 };
 
 export const demoteFromAdmin = async (req, res) => {
-    const {slug, userId: targetUserId} = req.params; // targetUserId comes from path param
+    const {slug, userId: targetUserId} = req.params;
     const requestorId = req.user.id;
 
     try {
@@ -682,7 +675,7 @@ export const demoteFromAdmin = async (req, res) => {
             attributes: ['id', 'userId'],
         });
         if (!workspace) return errorResponse(res, 404, 'Workspace not found');
-        const workspaceId = workspace.id; // Use ID for internal checks
+        const workspaceId = workspace.id;
 
         if (workspace.userId !== requestorId) {
             return errorResponse(
@@ -692,7 +685,6 @@ export const demoteFromAdmin = async (req, res) => {
             );
         }
 
-        // Check if target user is the creator
         if (targetUserId === workspace.userId) {
             return errorResponse(
                 res,
@@ -702,7 +694,7 @@ export const demoteFromAdmin = async (req, res) => {
         }
 
         const teamMember = await WorkspaceTeam.findOne({
-            where: {workspaceId, userId: targetUserId}, // Use ID here
+            where: {workspaceId, userId: targetUserId},
         });
         if (!teamMember) {
             return errorResponse(res, 404, 'User is not a member of this workspace');
@@ -717,7 +709,6 @@ export const demoteFromAdmin = async (req, res) => {
             message: 'Admin demoted to member successfully',
         });
     } catch (err) {
-        console.error('Demote admin error:', err);
         return errorResponse(res, 500, 'Failed to demote admin to member');
     }
 };
@@ -750,7 +741,6 @@ export const getCreatedWorkspaces = async (req, res) => {
 
         res.json(createPaginatedResponse(workspaces, count, page, limit));
     } catch (error) {
-        console.error('Error fetching created workspaces:', error);
         return errorResponse(res, 500, 'Failed to fetch created workspaces');
     }
 };
