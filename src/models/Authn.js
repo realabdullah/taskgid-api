@@ -30,8 +30,25 @@ Authn.init(
             primaryKey: true,
         },
         device: {
-            type: DataTypes.STRING,
-            allowNull: false,
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: {
+                type: null,
+                vendor: null,
+                model: null,
+            },
+            validate: {
+                isDeviceObject(value) {
+                    if (
+                        typeof value !== 'object' ||
+                    !('type' in value) ||
+                    !('vendor' in value) ||
+                    !('model' in value)
+                    ) {
+                        throw new Error('Device must be an object with type, vendor, and model.');
+                    }
+                },
+            },
         },
         credentialID: {
             type: DataTypes.STRING,
@@ -54,16 +71,25 @@ Authn.init(
         userId: {
             type: DataTypes.UUID,
             allowNull: false,
+            field: 'user_id',
             references: {
                 model: 'users',
                 key: 'id',
             },
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE',
         },
     },
     {
         sequelize,
         modelName: 'Authn',
         tableName: 'authns',
+        timestamps: true,
+        indexes: [
+            {
+                fields: ['user_id'],
+            },
+        ],
     },
 );
 
