@@ -10,11 +10,9 @@ import WorkspaceTeam from '../models/WorkspaceTeam.js';
  */
 const checkMemberMiddleware = async (req, res, next) => {
     const workspace = await Workspace.findOne({
-        where: {slug: req.params.slug},
+        where: {slug: req.params.workspaceSlug},
         include: [{model: User, as: 'team'}],
     });
-
-    console.log(workspace);
 
     if (!workspace || !workspace.team.some((member) => member.id === req.user.id)) {
         return res.status(403).json({error: 'We could not find the workspace you are looking for!'});
@@ -37,13 +35,11 @@ const checkAdminMiddleware = async (req, res, next) => {
         return res.status(404).json({error: 'Workspace not found', success: false});
     }
 
-    // Check if user is the creator (super admin)
     if (workspace.userId === req.user.id) {
         req.isSuperAdmin = true;
         return next();
     }
 
-    // Check if user is an admin
     const workspaceTeam = await WorkspaceTeam.findOne({
         where: {
             workspaceId: workspace.id,
@@ -75,7 +71,6 @@ const checkSuperAdminMiddleware = async (req, res, next) => {
         return res.status(404).json({error: 'Workspace not found', success: false});
     }
 
-    // Check if user is the creator (super admin)
     if (workspace.userId !== req.user.id) {
         return res.status(403).json({error: 'Only the workspace creator can perform this action', success: false});
     }

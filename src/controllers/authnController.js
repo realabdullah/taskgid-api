@@ -16,7 +16,7 @@ const MAX_DEVICES_PER_USER = 5;
 const CHALLENGE_TIMEOUT = 60000; // 1 minute
 
 export const authLimiter = rateLimit({
-    windowMs: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 1 * 60 * 1000,
+    windowMs: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : undefined,
     max: 5,
     message: {error: 'Too many authentication attempts, please try again later', success: false},
     standardHeaders: true,
@@ -45,7 +45,7 @@ export const generateRegistrationOptionsWithAuthn = async (req, res) => {
         }
 
         const excludeCredentials = savedAuthns ? savedAuthns.map((cred) => ({
-            id: isoBase64URL.toBuffer(cred.credentialID),
+            id: cred.id,
             type: 'public-key',
             transports: cred.transports || ['internal'],
         })) : [];
@@ -53,8 +53,7 @@ export const generateRegistrationOptionsWithAuthn = async (req, res) => {
         const options = await generateRegistrationOptions({
             rpName,
             rpID: rpId,
-            userID: req.user.id,
-            userName: req.user.username,
+            userName: req.user.email,
             timeout: CHALLENGE_TIMEOUT,
             attestationType: 'none',
             authenticatorSelection: {
@@ -90,12 +89,9 @@ export const verifyAuthnResponse = async (req, res) => {
         if (!verification.verified) return errorResponse(res, 400, 'Verification failed');
 
         const {registrationInfo} = verification;
-        const {credentialID, credentialPublicKey, counter} = registrationInfo;
+        const {credential} = registrationInfo;
 
-        const base64CredentialID = isoBase64URL.fromBuffer(credentialID);
-        const base64PublicKey = isoBase64URL.fromBuffer(credentialPublicKey);
-
-        const existingDevice = await Authn.findOne({where: {userId: user.id, credentialID: base64CredentialID}});
+        const existingDevice = await Authn.findByPk(credential.id);
         if (existingDevice) {
             return errorResponse(res, 400, 'This device or security key is already registered.');
         }
@@ -105,15 +101,19 @@ export const verifyAuthnResponse = async (req, res) => {
         const deviceInfo = parser.getDevice();
 
         await Authn.create({
+            id: credential.id,
             device: {
-                type: deviceInfo.type || ['Macintosh'].includes(deviceInfo.model) ? 'desktop' : 'mobile',
+                type: deviceInfo?.type ?
+                    deviceInfo.type :
+                    ['Macintosh'].includes(deviceInfo.model) ?
+                        'desktop' :
+                        'mobile',
                 vendor: deviceInfo.vendor || null,
                 model: deviceInfo.model || null,
             },
-            credentialPublicKey: base64PublicKey,
-            credentialID: base64CredentialID,
-            transports: registrationInfo.transports || ['internal'],
-            counter,
+            credentialPublicKey: isoBase64URL.fromBuffer(credential.publicKey),
+            transports: credential.transports,
+            counter: credential.counter,
             userId: req.user.id,
         });
 
@@ -145,7 +145,7 @@ export const requestLoginWithAuthn = async (req, res) => {
         const options = await generateAuthenticationOptions({
             rpID: rpId,
             allowCredentials: user.authns.map((cred) => ({
-                id: cred.credentialID,
+                id: cred.id,
                 transports: cred.transports,
             })),
             userVerification: 'required',
@@ -168,7 +168,7 @@ export const loginWithAuthn = async (req, res) => {
 
         if (!id) return errorResponse(res, 401, 'Authentication failed.');
 
-        const authn = await Authn.findOne({where: {credentialID: id}});
+        const authn = await Authn.findByPk(id);
         if (!authn) return errorResponse(res, 401, 'Authentication failed.');
 
         const user = await User.findByPk(authn.userId);
@@ -180,7 +180,7 @@ export const loginWithAuthn = async (req, res) => {
             expectedOrigin: rpOrigin,
             expectedRPID: rpId,
             credential: {
-                id: authn.credentialID,
+                id: authn.id,
                 counter: Number(authn.counter),
                 publicKey: isoBase64URL.toBuffer(authn.credentialPublicKey),
                 transports: authn.transports,
@@ -220,7 +220,7 @@ export const removeAuthn = async (req, res) => {
 
         if (!credentialID) return errorResponse(res, 400, 'Credential ID is required');
 
-        const authn = await Authn.findOne({where: {credentialID, userId: req.user.id}});
+        const authn = await Authn.findByPk(credentialID);
 
         if (!authn) return errorResponse(res, 404, 'Authenticator not found');
         await authn.destroy();

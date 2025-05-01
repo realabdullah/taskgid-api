@@ -8,7 +8,6 @@ import {body, validationResult} from 'express-validator';
  * @return {void}
  */
 export const validateWorkspaceInput = [
-    // Validate slug
     body('slug')
         .trim()
         .isLength({min: 3, max: 50})
@@ -17,21 +16,15 @@ export const validateWorkspaceInput = [
         .withMessage(
             'Slug can only contain lowercase letters, numbers, and hyphens',
         ),
-
-    // Validate title
     body('title')
         .trim()
         .isLength({min: 1, max: 100})
         .withMessage('Title must be between 1 and 100 characters'),
-
-    // Validate description (optional)
     body('description')
         .optional()
         .trim()
         .isLength({max: 500})
         .withMessage('Description cannot exceed 500 characters'),
-
-    // Validate team (optional)
     body('team').optional().isArray().withMessage('Team must be an array'),
 
     body('team.*.email')
@@ -39,7 +32,6 @@ export const validateWorkspaceInput = [
         .isEmail()
         .withMessage('Invalid email format in team array'),
 
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -63,38 +55,27 @@ export const validateWorkspaceInput = [
  * @return {void}
  */
 export const validateTaskInput = [
-    // Validate title
     body('title')
         .trim()
         .isLength({min: 1, max: 200})
         .withMessage('Title must be between 1 and 200 characters'),
-
-    // Validate description (optional)
     body('description')
         .optional()
         .trim()
         .isLength({max: 1000})
         .withMessage('Description cannot exceed 1000 characters'),
-
-    // Validate due date (optional)
     body('dueDate')
         .optional()
         .isISO8601()
         .withMessage('Due date must be a valid ISO 8601 date'),
-
-    // Validate priority (optional)
     body('priority')
         .optional()
         .isIn(['low', 'medium', 'high'])
         .withMessage('Priority must be low, medium, or high'),
-
-    // Validate status (optional)
     body('status')
         .optional()
         .isIn(['todo', 'in_progress', 'done'])
         .withMessage('Status must be todo, in_progress, or done'),
-
-    // Validate assignees (optional)
     body('assignees')
         .optional()
         .isArray()
@@ -102,10 +83,9 @@ export const validateTaskInput = [
 
     body('assignees.*')
         .optional()
-        .isUUID()
+        .isString()
         .withMessage('Invalid assignee ID format'),
 
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -135,7 +115,6 @@ export const validateCommentInput = [
         .isLength({min: 1, max: 1000})
         .withMessage('Comment must be between 1 and 1000 characters'),
 
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -159,23 +138,16 @@ export const validateCommentInput = [
  * @return {void}
  */
 export const validateInviteInput = [
-    // Validate email
     body('email').trim().isEmail().withMessage('Invalid email format'),
-
-    // Validate workspaceId (for invite creation)
     body('workspaceId')
         .optional()
         .isUUID()
         .withMessage('Invalid workspace ID format'),
-
-    // Validate token (for invite acceptance)
     body('token')
         .optional()
         .isString()
         .isLength({min: 32, max: 64})
         .withMessage('Invalid invite token format'),
-
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -271,10 +243,7 @@ export const validateUpdateUserProfile = [
 ];
 
 export const validateAuthInput = [
-    // Validate email
     body('email').trim().isEmail().withMessage('Invalid email format'),
-
-    // Validate password
     body('password')
         .isLength({min: 8})
         .withMessage('Password must be at least 8 characters long')
@@ -285,8 +254,6 @@ export const validateAuthInput = [
             'Password must contain at least one uppercase letter, one lowercase letter, ' +
             'one number, and one special character',
         ),
-
-    // Check for validation errors
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

@@ -1,4 +1,6 @@
 /* eslint-disable require-jsdoc */
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import express from 'express';
@@ -36,8 +38,7 @@ app.use(expressSanitizer());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+const swaggerDocument = YAML.load(path.join(__dirname, '../openapi.yaml'));
 
 // Set up model associations
 setupAssociations();
@@ -48,6 +49,8 @@ syncDatabase(false).catch((error) => {
     process.exit(1);
 });
 
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/auth', auth);
 app.use('/users', user);
 app.use('/workspaces', workspace);

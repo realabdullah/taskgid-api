@@ -10,6 +10,7 @@ import {
     removeTeamMember,
     promoteToAdmin,
     demoteFromAdmin,
+    getWorkspaceActivities,
 } from '../controllers/workspaceController.js';
 import {
     getWorkspaceStatistics,
@@ -19,7 +20,6 @@ import {validateWorkspaceInput} from '../middleware/validationMiddleware.js';
 
 const router = new express.Router();
 
-// Apply auth middleware to all workspace routes
 router.use(authMiddleware);
 
 // --- Workspace Listing & Creation ---
@@ -30,6 +30,7 @@ router.post('/', validateWorkspaceInput, addNewWorkspace);
 router.get('/:slug', getWorkspace);
 router.put('/:slug', validateWorkspaceInput, updateWorkspace);
 router.delete('/:slug', deleteWorkspace);
+router.get('/:slug/activities', getWorkspaceActivities);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', getWorkspaceTeam);

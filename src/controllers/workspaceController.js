@@ -1,5 +1,6 @@
 /* eslint-disable require-jsdoc */
 import {Workspace} from '../models/Workspace.js';
+import {logWorkspaceActivity} from '../utils/activityLogger.js';
 import User from '../models/User.js';
 import 'dotenv/config';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
@@ -9,6 +10,7 @@ import {
 } from '../utils/pagination.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {Op, Sequelize} from 'sequelize';
+import WorkspaceActivity from '../models/WorkspaceActivity.js';
 
 const errorResponse = (res, status, message) =>
     res.status(status).json({error: message, success: false});
@@ -417,6 +419,13 @@ export const updateWorkspace = async (req, res) => {
             ],
         });
 
+        await logWorkspaceActivity(
+            updatedWorkspace.id,
+            req.user.id,
+            'workspace_updated',
+            {workspaceName: updatedWorkspace.title},
+        );
+
         res.json({success: true, workspace: updatedWorkspace});
     } catch (err) {
         return errorResponse(res, 500, err.message || 'Failed to update workspace');
@@ -484,6 +493,13 @@ export const addNewWorkspace = async (req, res) => {
             userId: req.user.id,
             role: 'creator',
         });
+
+        await logWorkspaceActivity(
+            workspace.id,
+            req.user.id,
+            'workspace_created',
+            {workspaceName: workspace.title},
+        );
 
         const populatedWorkspace = await Workspace.findByPk(workspace.id, {
             include: [
@@ -742,5 +758,41 @@ export const getCreatedWorkspaces = async (req, res) => {
         res.json(createPaginatedResponse(workspaces, count, page, limit));
     } catch (error) {
         return errorResponse(res, 500, 'Failed to fetch created workspaces');
+    }
+};
+
+export const getWorkspaceActivities = async (req, res) => {
+    try {
+        const {slug} = req.params;
+        const {page, limit, offset} = getPaginationParams(req.query);
+
+        const workspace = await Workspace.findOne({
+            where: {slug},
+            attributes: ['id'],
+        });
+
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
+
+        const role = await getUserRoleInWorkspace(req.user.id, workspace.id);
+        if (!role) return errorResponse(res, 403, 'Access denied');
+
+        const {count, rows: activities} = await WorkspaceActivity.findAndCountAll({
+            where: {workspaceId: workspace.id},
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            }],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        const response = createPaginatedResponse(activities, count, page, limit);
+        res.json(response);
+    } catch (error) {
+        console.error('Get Workspace Activities Error:', error);
+        const statusCode = error.status || 500;
+        return errorResponse(res, statusCode, error.message || 'Failed to fetch workspace activities');
     }
 };

@@ -12,7 +12,6 @@ class Authn extends Model {
      */
     toJSON() {
         const values = {...this.get()};
-        delete values.credentialID;
         delete values.credentialPublicKey;
         delete values.counter;
         delete values.transports;
@@ -25,8 +24,7 @@ class Authn extends Model {
 Authn.init(
     {
         id: {
-            type: DataTypes.UUID,
-            defaultValue: DataTypes.UUIDV4,
+            type: DataTypes.STRING,
             primaryKey: true,
         },
         device: {
@@ -49,10 +47,6 @@ Authn.init(
                     }
                 },
             },
-        },
-        credentialID: {
-            type: DataTypes.STRING,
-            allowNull: false,
         },
         credentialPublicKey: {
             type: DataTypes.TEXT,

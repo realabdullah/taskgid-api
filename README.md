@@ -93,7 +93,10 @@ npm run db:sync:force
 
 ## API Documentation
 
-See the [API_DOCUMENTATION.md](API_DOCUMENTATION.md) file for detailed API documentation.
+API documentation is available in OpenAPI format. You can view it in the following ways:
+
+1. See the [openapi.yaml](openapi.yaml) file for the OpenAPI specification
+2. When the server is running, visit `/api-docs` for an interactive documentation interface
 
 ## License
 
