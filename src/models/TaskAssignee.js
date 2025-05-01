@@ -1,7 +1,5 @@
 import {DataTypes} from 'sequelize';
 import sequelize from '../config/database.js';
-import Task from './Task.js';
-import User from './User.js';
 
 const TaskAssignee = sequelize.define('TaskAssignee', {
     id: {
@@ -37,9 +35,5 @@ const TaskAssignee = sequelize.define('TaskAssignee', {
         },
     ],
 });
-
-// Define associations
-TaskAssignee.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
-TaskAssignee.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 
 export default TaskAssignee;

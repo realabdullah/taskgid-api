@@ -2,27 +2,38 @@
 import Task from '../models/Task.js';
 import User from '../models/User.js';
 import {Workspace} from '../models/Workspace.js';
+import TaskAssignee from '../models/TaskAssignee.js';
+import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 
-// Define response helpers locally (assuming they are not globally available)
-const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
+const errorResponse = (res, status, error) => res.status(status).json({error: error, success: false});
 const successResponse = (res, data, statusCode = 200) => res.status(statusCode).json({...data, success: true});
 
 
-// Helper to find user by username for assignee lookup
 const getAssignee = async (assigneeUsername) => {
     if (!assigneeUsername) return null;
     const user = await User.findOne({where: {username: assigneeUsername}, attributes: ['id']});
     return user ? user.id : null;
 };
 
-// Helper to find workspace ID from slug and handle errors
+const getAssignees = async (assigneeUsernames) => {
+    if (!assigneeUsernames || !assigneeUsernames.length) return [];
+
+    const assigneeIds = [];
+    for (const username of assigneeUsernames) {
+        const userId = await getAssignee(username);
+        if (userId) assigneeIds.push(userId);
+    }
+
+    return assigneeIds;
+};
+
 async function getWorkspaceIdFromSlug(slug) {
     const workspace = await Workspace.findOne({where: {slug}, attributes: ['id']});
     if (!workspace) {
         // eslint-disable-next-line no-throw-literal
-        throw {status: 404, message: 'Workspace not found'}; // Throw custom error object
+        throw {status: 404, message: 'Workspace not found'};
     }
     return workspace.id;
 }
@@ -30,12 +41,11 @@ async function getWorkspaceIdFromSlug(slug) {
 
 export const addTask = async (req, res) => {
     try {
-        const {workspaceSlug} = req.params; // Get slug from route params
-        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug); // Find workspace ID
+        const {workspaceSlug} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-        // Removed workspaceId from body destructuring
-        const {title, description, status, priority, dueDate, assignee} = req.body;
-        const assigneeId = await getAssignee(assignee);
+        const {title, description, status, priority, dueDate, assignees} = req.body;
+        const assigneeIds = await getAssignees(assignees);
 
         const task = await Task.create({
             title,
@@ -43,55 +53,79 @@ export const addTask = async (req, res) => {
             status,
             priority,
             dueDate,
-            assigneeId,
-            userId: req.user.id, // Assuming auth middleware provides req.user.id
-            workspaceId, // Use the retrieved workspaceId
+            workspaceId,
+            createdById: req.user.id,
         });
 
-        // Refetch to include associations
+        if (assigneeIds.length > 0) {
+            const assigneeEntries = assigneeIds.map((userId) => ({
+                taskId: task.id,
+                userId,
+            }));
+            await TaskAssignee.bulkCreate(assigneeEntries);
+        }
+
+        await logTaskActivity(
+            task.id,
+            req.user.id,
+            'created',
+            {taskTitle: task.title},
+        );
+
+        await logWorkspaceActivity(
+            workspaceId,
+            req.user.id,
+            'task_created',
+            {taskId: task.id, taskTitle: task.title},
+        );
+
         const populatedTask = await Task.findByPk(task.id, {
             include: [
                 {
                     model: User,
-                    as: 'assignee',
+                    as: 'assignees',
+                    attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                    through: {attributes: []},
+                },
+                {
+                    model: User,
+                    as: 'creator',
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
                 },
-                {model: User, as: 'user', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
         });
 
-        return successResponse(res, populatedTask, 201); // Use successResponse helper
+        return successResponse(res, {data: populatedTask.toJSON()}, 201);
     } catch (error) {
         console.error('Add Task Error:', error);
-        const statusCode = error.status || 400; // Use status from custom error or default to 400
+        const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to add task');
     }
 };
 
 export const updateTask = async (req, res) => {
     try {
-        const {workspaceSlug, id: taskId} = req.params; // Get slug and task ID
-        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug); // Find workspace ID
+        const {workspaceSlug, id: taskId} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-        // Removed workspaceId from body destructuring
-        const {title, description, status, priority, dueDate, assignee} = req.body;
-        const assigneeId = await getAssignee(assignee);
+        const {title, description, status, priority, dueDate, assignees} = req.body;
+        const assigneeIds = await getAssignees(assignees);
 
-        // Find the task within the specific workspace
-        // We assume checkMemberMiddleware already verified user has access to workspaceSlug
         const task = await Task.findOne({
             where: {
                 id: taskId,
-                workspaceId, // Ensure task belongs to the correct workspace
+                workspaceId,
             },
+            include: [{
+                model: User,
+                as: 'assignees',
+                attributes: ['id'],
+            }],
         });
 
         if (!task) {
-            // If task doesn't exist in this workspace, return 404
             return errorResponse(res, 404, 'Task not found in this workspace');
         }
-
-        // Optional: Add check if req.user.id === task.userId or if user has specific update permissions
 
         await task.update({
             title,
@@ -99,48 +133,88 @@ export const updateTask = async (req, res) => {
             status,
             priority,
             dueDate,
-            assigneeId,
         });
 
-        // Refetch to include associations
+        const currentAssigneeIds = task.assignees.map((assignee) => assignee.id);
+        if (currentAssigneeIds.length > 0) {
+            await TaskAssignee.destroy({
+                where: {
+                    taskId: task.id,
+                    userId: {
+                        [sequelize.Op.notIn]: assigneeIds,
+                    },
+                },
+            });
+        }
+
+        const newAssigneeIds = assigneeIds.filter((id) => !currentAssigneeIds.includes(id));
+        if (newAssigneeIds.length > 0) {
+            const assigneeEntries = newAssigneeIds.map((userId) => ({
+                taskId: task.id,
+                userId,
+            }));
+            await TaskAssignee.bulkCreate(assigneeEntries);
+        }
+
         const updatedTask = await Task.findByPk(task.id, {
             include: [
                 {
                     model: User,
-                    as: 'assignee',
+                    as: 'assignees',
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                    through: {attributes: []},
                 },
-                {model: User, as: 'user', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
         });
 
-        return successResponse(res, updatedTask); // Use successResponse helper
+        const removedAssigneeIds = currentAssigneeIds.filter((id) => !assigneeIds.includes(id));
+        const addedAssigneeIds = newAssigneeIds;
+
+        if (removedAssigneeIds.length > 0) {
+            await logWorkspaceActivity(
+                workspaceId,
+                req.user.id,
+                'task_unassigned',
+                {taskId: updatedTask.id, taskTitle: updatedTask.title, previousAssigneeIds: removedAssigneeIds},
+            );
+        }
+
+        if (addedAssigneeIds.length > 0) {
+            await logWorkspaceActivity(
+                workspaceId,
+                req.user.id,
+                'task_assigned',
+                {taskId: updatedTask.id, taskTitle: updatedTask.title, assigneeIds: addedAssigneeIds},
+            );
+        }
+
+        return successResponse(res, {data: updatedTask.toJSON()});
     } catch (error) {
         console.error('Update Task Error:', error);
-        const statusCode = error.status || 400; // Use status from custom error or default to 400
+        const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to update task');
     }
 };
 
 export const fetchWorkspaceTask = async (req, res) => {
     try {
-        const {workspaceSlug, id: taskId} = req.params; // Get slug and task ID
-        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug); // Find workspace ID
-
-        // We assume checkMemberMiddleware already verified user has access to workspaceSlug
+        const {workspaceSlug, id: taskId} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
         const task = await Task.findOne({
             where: {
                 id: taskId,
-                workspaceId, // Ensure task belongs to the correct workspace
+                workspaceId,
             },
             include: [
                 {
                     model: User,
-                    as: 'assignee',
+                    as: 'assignees',
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                    through: {attributes: []},
                 },
-                {model: User, as: 'user', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
         });
 
@@ -148,39 +222,29 @@ export const fetchWorkspaceTask = async (req, res) => {
             return errorResponse(res, 404, 'Task not found in this workspace');
         }
 
-        return successResponse(res, task); // Use successResponse helper
+        return successResponse(res, {data: task.toJSON()});
     } catch (error) {
         console.error('Fetch Task Error:', error);
-        const statusCode = error.status || 400; // Use status from custom error or default to 400
+        const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to fetch task');
     }
 };
 
 export const deleteTask = async (req, res) => {
     try {
-        const {workspaceSlug, id: taskId} = req.params; // Get slug and task ID
-        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug); // Find workspace ID
+        const {workspaceSlug, id: taskId} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-        // We assume checkMemberMiddleware already verified user has access to workspaceSlug
+        const task = await Task.findOne({where: {id: taskId, workspaceId}});
+        if (!task) return errorResponse(res, 404, 'Task not found in this workspace');
 
-        const task = await Task.findOne({
-            where: {
-                id: taskId,
-                workspaceId, // Ensure task belongs to the correct workspace
-            },
-        });
-
-        if (!task) {
-            return errorResponse(res, 404, 'Task not found in this workspace');
-        }
-
-        // Optional: Add check if req.user.id === task.userId or if user has specific delete permissions
-
+        await TaskAssignee.destroy({where: {taskId: task.id}});
         await task.destroy();
-        return successResponse(res, {message: 'Task deleted successfully'}); // Use successResponse helper
+
+        return successResponse(res, {message: 'Task deleted successfully'});
     } catch (error) {
         console.error('Delete Task Error:', error);
-        const statusCode = error.status || 400; // Use status from custom error or default to 400
+        const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to delete task');
     }
 };
@@ -188,39 +252,37 @@ export const deleteTask = async (req, res) => {
 
 export const fetchWorkspaceTasks = async (req, res) => {
     try {
-        const {workspaceSlug} = req.params; // Use slug from params
-        const {page, limit, offset} = getPaginationParams(req.query); // Pagination from query
+        const {workspaceSlug} = req.params;
+        const {page, limit, offset} = getPaginationParams(req.query);
 
-        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug); // Find workspace ID
-
-        // We assume checkMemberMiddleware already verified user has access to workspaceSlug
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
         const {count, rows: tasks} = await Task.findAndCountAll({
-            where: {workspaceId}, // Filter by the retrieved workspaceId
+            where: {workspaceId},
             include: [
                 {
                     model: User,
-                    as: 'assignee',
+                    as: 'assignees',
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                    through: {attributes: []},
                 },
-                {model: User, as: 'user', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+                {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
             limit,
             offset,
             order: [['createdAt', 'DESC']],
         });
 
-        // Use the standard pagination response creator
         const response = createPaginatedResponse(
             tasks,
             count,
             parseInt(page || 1),
             parseInt(limit || 10),
-        ); // Pass page/limit
-        return successResponse(res, response); // Use successResponse helper
+        );
+        return successResponse(res, response);
     } catch (error) {
         console.error('Fetch Tasks Error:', error);
-        const statusCode = error.status || 400; // Use status from custom error or default to 400
+        const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to fetch tasks');
     }
 };

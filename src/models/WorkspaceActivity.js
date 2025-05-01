@@ -1,20 +1,20 @@
 import {DataTypes} from 'sequelize';
 import sequelize from '../config/database.js';
 
-const TaskActivity = sequelize.define('TaskActivity', {
+const WorkspaceActivity = sequelize.define('WorkspaceActivity', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
     },
-    taskId: {
+    workspaceId: {
         type: DataTypes.UUID,
         allowNull: false,
         references: {
-            model: 'tasks',
+            model: 'workspaces',
             key: 'id',
         },
-        field: 'task_id',
+        field: 'workspace_id',
     },
     userId: {
         type: DataTypes.UUID,
@@ -28,15 +28,19 @@ const TaskActivity = sequelize.define('TaskActivity', {
     action: {
         // eslint-disable-next-line new-cap
         type: DataTypes.ENUM(
-            'created',
-            'updated',
-            'status_changed',
-            'priority_changed',
-            'assigned',
-            'unassigned',
-            'comment_added',
-            'attachment_added',
-            'deleted',
+            'workspace_created',
+            'workspace_updated',
+            'workspace_deleted',
+            'member_invited',
+            'member_joined',
+            'member_removed',
+            'member_promoted',
+            'member_demoted',
+            'task_created',
+            'task_updated',
+            'task_deleted',
+            'task_assigned',
+            'task_unassigned',
         ),
         allowNull: false,
     },
@@ -45,11 +49,11 @@ const TaskActivity = sequelize.define('TaskActivity', {
         allowNull: true,
     },
 }, {
-    tableName: 'task_activities',
+    tableName: 'workspace_activities',
     timestamps: true,
     indexes: [
         {
-            fields: ['task_id'],
+            fields: ['workspace_id'],
         },
         {
             fields: ['user_id'],
@@ -57,4 +61,4 @@ const TaskActivity = sequelize.define('TaskActivity', {
     ],
 });
 
-export default TaskActivity;
+export default WorkspaceActivity;

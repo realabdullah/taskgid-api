@@ -41,8 +41,10 @@
     "pusher": "^5.2.0",
     "sequelize": "^6.31.0",
     "sharp": "^0.32.1",
+    "swagger-ui-express": "^5.0.1",
     "ua-parser-js": "^2.0.3",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "yamljs": "^0.3.0"
   },
   "engines": {
     "node": ">=14.0.0"

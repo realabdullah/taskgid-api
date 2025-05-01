@@ -8,6 +8,7 @@ import emailService from '../utils/emailService.js';
 import 'dotenv/config';
 import {generateUsername} from '../utils/usernameGenerator.js';
 import crypto from 'crypto';
+import {logWorkspaceActivity} from '../utils/activityLogger.js';
 
 const inviteUser = async (req, res) => {
     const {email, workspaceId} = req.body;
@@ -135,6 +136,20 @@ const acceptInvite = async (req, res) => {
 
         invite.used = true;
         await invite.save();
+
+        await logWorkspaceActivity(
+            workspace.id,
+            user.id,
+            'member_invited',
+            {invitedUserId: invite.invitedById},
+        );
+
+        await logWorkspaceActivity(
+            workspace.id,
+            user.id,
+            'member_joined',
+            {invitedUserId: invite.invitedById},
+        );
 
         if (workspace.user) {
             acceptInviteNotification(workspace.user.id, workspace, user);

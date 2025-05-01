@@ -1,0 +1,1635 @@
+openapi: 3.1.0
+info:
+  title: TaskGid API
+  description: API documentation for TaskGid - Task Management Application
+  version: 1.0.0
+  contact:
+    name: realabdullah
+  license:
+    name: ISC
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: https://taskgidapi.abdspace.xyz
+    description: Production server (example)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        success:
+          type: boolean
+          default: false
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        username:
+          type: string
+        profilePicture:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        about:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [user, admin]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WorkspaceActivity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            [
+              workspace_created,
+              workspace_updated,
+              workspace_deleted,
+              member_invited,
+              member_joined,
+              member_removed,
+              member_promoted,
+              member_demoted,
+              task_created,
+              task_updated,
+              task_deleted,
+              task_assigned,
+              task_unassigned,
+            ]
+        details:
+          type: object
+          nullable: true
+        user:
+          $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        workspaceId:
+          type: string
+          format: uuid
+        assignees:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        taskId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        originalname:
+          type: string
+        mimetype:
+          type: string
+        size:
+          type: integer
+        path:
+          type: string
+        url:
+          type: string
+        storageType:
+          type: string
+        userId:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+          nullable: true
+        commentId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Statistics:
+      type: object
+      properties:
+        tasksByStatus:
+          type: object
+          properties:
+            todo:
+              type: integer
+            in_progress:
+              type: integer
+            done:
+              type: integer
+        tasksByPriority:
+          type: object
+          properties:
+            low:
+              type: integer
+            medium:
+              type: integer
+            high:
+              type: integer
+        completionRate:
+          type: number
+          format: float
+        teamMemberCount:
+          type: integer
+
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: object
+          properties:
+            token:
+              type: string
+            expires:
+              type: string
+              format: date-time
+        refreshToken:
+          type: object
+          properties:
+            token:
+              type: string
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - firstName
+                - lastName
+                - username
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                username:
+                  type: string
+                  pattern: ^[a-zA-Z0-9_]+$
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  accessToken:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      expiresIn:
+                        type: integer
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    post:
+      summary: Login with email and password
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  accessToken:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      expires:
+                        type: string
+                  refreshToken:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/logout:
+    post:
+      summary: Logout user
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      expiresIn:
+                        type: integer
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/authn/request-login:
+    post:
+      summary: Request WebAuthn login
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: WebAuthn options generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  options:
+                    type: object
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/authn/login:
+    post:
+      summary: Complete WebAuthn login
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  accessToken:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      expires:
+                        type: string
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/authn/register:
+    post:
+      summary: Register a new WebAuthn credential
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: WebAuthn registration options generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  options:
+                    type: object
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/authn/verify-registration:
+    post:
+      summary: Verify WebAuthn registration
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - credential
+              properties:
+                credential:
+                  type: object
+      responses:
+        "200":
+          description: WebAuthn credential registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "401":
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users:
+    get:
+      summary: Get current user profile
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/profile:
+    get:
+      summary: Get detailed user profile
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    $ref: "#/components/schemas/User"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      summary: Update user profile
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                title:
+                  type: string
+                about:
+                  type: string
+                location:
+                  type: string
+      responses:
+        "200":
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/profile/picture:
+    post:
+      summary: Upload profile picture
+      tags:
+        - Users
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Profile picture uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profilePicture:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces:
+    get:
+      summary: Get all workspaces for current user
+      tags:
+        - Workspaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspaces retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workspace"
+                  success:
+                    type: boolean
+                    default: true
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    post:
+      summary: Create a new workspace
+      tags:
+        - Workspaces
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "201":
+          description: Workspace created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: "#/components/schemas/Workspace"
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get workspace by slug
+      tags:
+        - Workspaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: "#/components/schemas/Workspace"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      summary: Update workspace
+      tags:
+        - Workspaces
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "200":
+          description: Workspace updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: "#/components/schemas/Workspace"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete workspace
+      tags:
+        - Workspaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}/team:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get workspace team members
+      tags:
+        - Teams
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Team members retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  team:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    post:
+      summary: Add team member to workspace
+      tags:
+        - Teams
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [member, admin]
+                  default: member
+      responses:
+        "200":
+          description: Team member added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}/team/{userIdToRemove}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: userIdToRemove
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    delete:
+      summary: Remove team member from workspace
+      tags:
+        - Teams
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Team member removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}/admins/{userId}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Promote user to workspace admin
+      tags:
+        - Teams
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User promoted to admin successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Demote user from workspace admin
+      tags:
+        - Teams
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User demoted from admin successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}/statistics:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get workspace statistics
+      tags:
+        - Statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statistics:
+                    $ref: "#/components/schemas/Statistics"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{slug}/activities:
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+
+      get:
+        summary: Get workspace activity logs
+        tags:
+          - Workspaces
+        security:
+          - bearerAuth: []
+        parameters:
+          - name: page
+            in: query
+            schema:
+              type: integer
+              default: 1
+          - name: limit
+            in: query
+            schema:
+              type: integer
+              default: 10
+        responses:
+          "200":
+            description: Activity logs retrieved successfully
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    activities:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/WorkspaceActivity"
+                    pagination:
+                      type: object
+                      properties:
+                        totalItems:
+                          type: integer
+                        totalPages:
+                          type: integer
+                        currentPage:
+                          type: integer
+                        itemsPerPage:
+                          type: integer
+                    success:
+                      type: boolean
+                      default: true
+          "403":
+            description: Access denied
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/Error"
+          "404":
+            description: Workspace not found
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/Error"
+
+  /workspaces/{workspaceSlug}/tasks:
+    parameters:
+      - name: workspaceSlug
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Get all tasks for a workspace
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [todo, in_progress, done]
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - name: assignee
+          in: query
+          schema:
+            type: string
+            description: Filter tasks by assignee username
+      responses:
+        "200":
+          description: Tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Task"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    post:
+      summary: Create a new task in workspace
+      tags:
+        - Tasks
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [todo, in_progress, done]
+                  default: todo
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                dueDate:
+                  type: string
+                  format: date-time
+                assignees:
+                  type: array
+                  items:
+                    type: string
+                  description: Array of usernames to assign to this task
+      responses:
+        "201":
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: "#/components/schemas/Task"
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{workspaceSlug}/tasks/{taskId}/attachments:
+    parameters:
+      - name: workspaceSlug
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get all attachments for a task
+      tags:
+        - Attachments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Attachments retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Attachment"
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{id}/tasks/{taskId}/attachments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Upload attachment to task
+      tags:
+        - Attachments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Attachment uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment:
+                    $ref: "#/components/schemas/Attachment"
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: No file uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workspaces/{id}/comments/{commentId}/attachments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Upload attachment to comment
+      tags:
+        - Attachments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Attachment uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment:
+                    $ref: "#/components/schemas/Attachment"
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: No file uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /attachments/{attachmentId}:
+    parameters:
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    delete:
+      summary: Delete attachment
+      tags:
+        - Attachments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Attachment deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "404":
+          description: Attachment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /invite:
+    post:
+      summary: Invite a user to a workspace
+      tags:
+        - Invites
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - workspaceId
+              properties:
+                email:
+                  type: string
+                  format: email
+                workspaceId:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: User invited successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input or user already invited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not authorized to send invites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /invite/accept:
+    post:
+      summary: Accept a workspace invitation
+      tags:
+        - Invites
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Invitation accepted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  isNewUser:
+                    type: boolean
+                  success:
+                    type: boolean
+                    default: true
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Invite not found or already used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /invite/pending:
+    get:
+      summary: Get pending invitations
+      tags:
+        - Invites
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Pending invitations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        email:
+                          type: string
+                          format: email
+                        token:
+                          type: string
+                        workspaceId:
+                          type: string
+                          format: uuid
+                        invitedById:
+                          type: string
+                          format: uuid
+                        used:
+                          type: boolean
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                  success:
+                    type: boolean
+                    default: true
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
