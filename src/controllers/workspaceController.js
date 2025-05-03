@@ -335,27 +335,27 @@ export const getWorkspaceTeam = async (req, res) => {
         }
 
         const {count, rows: teamMemberships} =
-      await WorkspaceTeam.findAndCountAll({
-          where: {workspaceId: workspace.id},
-          include: [
-              {
-                  model: User,
-                  as: 'memberDetail',
-                  attributes: [
-                      'id',
-                      'firstName',
-                      'lastName',
-                      'email',
-                      'profilePicture',
-                      'username',
-                  ],
-              },
-          ],
-          limit,
-          offset,
-          order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
-          distinct: true,
-      });
+            await WorkspaceTeam.findAndCountAll({
+                where: {workspaceId: workspace.id},
+                include: [
+                    {
+                        model: User,
+                        as: 'memberDetail',
+                        attributes: [
+                            'id',
+                            'firstName',
+                            'lastName',
+                            'email',
+                            'profilePicture',
+                            'username',
+                        ],
+                    },
+                ],
+                limit,
+                offset,
+                order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
+                distinct: true,
+            });
 
         const team = teamMemberships.map((tm) => ({
             ...tm.memberDetail.toJSON(),
@@ -375,17 +375,10 @@ export const updateWorkspace = async (req, res) => {
 
     try {
         const workspace = await Workspace.findOne({where: {slug}});
-
-        if (!workspace) {
-            return errorResponse(res, 404, 'Workspace not found');
-        }
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
 
         if (workspace.userId !== userId) {
-            return errorResponse(
-                res,
-                403,
-                'Only the workspace creator can update workspace details',
-            );
+            return errorResponse(res, 403, 'Only the workspace creator can update workspace details');
         }
 
         if (payload.slug && payload.slug !== workspace.slug) {
@@ -393,14 +386,11 @@ export const updateWorkspace = async (req, res) => {
                 where: {slug: payload.slug},
             });
             if (slugExists > 0) {
-                return errorResponse(
-                    res,
-                    400,
-                    'A workspace with this slug already exists',
-                );
+                return errorResponse(res, 400, 'A workspace with this slug already exists');
             }
         }
 
+        const previousValues = workspace.toJSON();
         await workspace.update(payload);
 
         const updatedWorkspace = await Workspace.findByPk(workspace.id, {
@@ -408,22 +398,23 @@ export const updateWorkspace = async (req, res) => {
                 {
                     model: User,
                     as: 'user',
-                    attributes: [
-                        'id',
-                        'firstName',
-                        'lastName',
-                        'email',
-                        'profilePicture',
-                    ],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'profilePicture'],
                 },
             ],
         });
+
+        const changedFields = {};
+        for (const key in payload) {
+            if (payload[key] !== previousValues[key]) {
+                changedFields[key] = {from: previousValues[key], to: payload[key]};
+            }
+        }
 
         await logWorkspaceActivity(
             updatedWorkspace.id,
             req.user.id,
             'workspace_updated',
-            {workspaceName: updatedWorkspace.title},
+            {workspaceName: updatedWorkspace.title, changes: changedFields},
         );
 
         res.json({success: true, workspace: updatedWorkspace});
@@ -438,20 +429,16 @@ export const deleteWorkspace = async (req, res) => {
 
     try {
         const workspace = await Workspace.findOne({where: {slug}});
-
-        if (!workspace) {
-            return errorResponse(res, 404, 'Workspace not found');
-        }
+        if (!workspace) return errorResponse(res, 404, 'Workspace not found');
 
         if (workspace.userId !== userId) {
-            return errorResponse(
-                res,
-                403,
-                'Only the workspace creator can delete the workspace',
-            );
+            return errorResponse(res, 403, 'Only the workspace creator can delete the workspace');
         }
 
+        const meta = {workspaceName: workspace.title, workspaceSlug: workspace.slug};
+
         await workspace.destroy();
+        await logWorkspaceActivity(workspace.id, req.user.id, 'workspace_deleted', meta);
         res.json({success: true, message: 'Workspace deleted successfully'});
     } catch (err) {
         return errorResponse(res, 500, 'Failed to delete workspace');
@@ -672,6 +659,17 @@ export const promoteToAdmin = async (req, res) => {
         }
 
         await teamMember.update({role: 'admin'});
+        await logWorkspaceActivity(
+            workspaceId,
+            requestorId,
+            'member_promoted',
+            {
+                promotedUser: `${teamMember.firstName} ${teamMember.lastName}`,
+                previousRole: teamMember.role,
+                newRole: 'admin',
+            },
+        );
+
         res.json({
             success: true,
             message: 'Member promoted to admin successfully',
@@ -720,44 +718,23 @@ export const demoteFromAdmin = async (req, res) => {
         }
 
         await teamMember.update({role: 'member'});
+        await logWorkspaceActivity(
+            workspaceId,
+            requestorId,
+            'member_demoted',
+            {
+                demotedUser: `${teamMember.firstName} ${teamMember.lastName}`,
+                previousRole: 'admin',
+                newRole: 'member',
+            },
+        );
+
         res.json({
             success: true,
             message: 'Admin demoted to member successfully',
         });
     } catch (err) {
         return errorResponse(res, 500, 'Failed to demote admin to member');
-    }
-};
-
-export const getCreatedWorkspaces = async (req, res) => {
-    const {page, limit, offset} = getPaginationParams(req.query);
-    const userId = req.user.id;
-
-    try {
-        const {count, rows: workspaces} = await Workspace.findAndCountAll({
-            where: {userId: userId},
-            include: [
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: [
-                        'id',
-                        'firstName',
-                        'lastName',
-                        'email',
-                        'profilePicture',
-                    ],
-                },
-            ],
-            limit,
-            offset,
-            order: [['createdAt', 'DESC']],
-            distinct: true,
-        });
-
-        res.json(createPaginatedResponse(workspaces, count, page, limit));
-    } catch (error) {
-        return errorResponse(res, 500, 'Failed to fetch created workspaces');
     }
 };
 
