@@ -9,6 +9,52 @@ import 'dotenv/config';
 import {generateUsername} from '../utils/usernameGenerator.js';
 import crypto from 'crypto';
 import {logWorkspaceActivity} from '../utils/activityLogger.js';
+import {Op} from 'sequelize';
+import WorkspaceActivity from '../models/WorkspaceActivity.js';
+
+const updateActivityLogDetails = async (workspaceId, activityType, findCriteria, newDetails) => {
+    console.log(
+        `Attempting to update log: 
+            WID=${workspaceId}, Type=${activityType},
+            Criteria=${JSON.stringify(findCriteria)},
+            NewDetails=${JSON.stringify(newDetails)}`,
+    );
+
+    try {
+        const whereClause = {
+            workspaceId: workspaceId,
+            type: activityType,
+            details: {[Op.contains]: findCriteria},
+        };
+
+        const logEntry = await WorkspaceActivity.findOne({where: whereClause});
+
+        if (logEntry) {
+            const currentDetails = typeof logEntry.details === 'object' && logEntry.details !== null ?
+                logEntry.details :
+                {};
+            const updatedDetails = {...currentDetails, ...newDetails};
+            await logEntry.update({details: updatedDetails});
+
+            console.log(`Successfully updated activity log entry ID: ${logEntry.id}`);
+            return true;
+        } else {
+            console.warn(`
+            Could not find activity log entry to update with criteria: 
+                ${JSON.stringify(findCriteria)} for WID=${workspaceId}, Type=${activityType}
+            `);
+            return false;
+        }
+    } catch (error) {
+        console.error(`
+            Error updating activity log details for WID=${workspaceId},
+            Type=${activityType},
+            Criteria=${JSON.stringify(findCriteria)}:`,
+        error,
+        );
+        return false;
+    }
+};
 
 const inviteUser = async (req, res) => {
     const {email, workspaceId} = req.body;
@@ -47,12 +93,21 @@ const inviteUser = async (req, res) => {
 
         const inviteUrl = `${process.env.APP_URL}/accept-invite/${token}`;
 
-        await Invite.create({
+        const newInvite = await Invite.create({
             email,
             token,
             workspaceId: workspace.id,
             invitedById: inviterUser.id,
         });
+
+        const activityDetails = {invitedEmail: email, inviteId: newInvite.id};
+        if (existingUser) {
+            activityDetails.invitedName = `${existingUser.firstName || ''} ${existingUser.lastName || ''}`.trim();
+        } else {
+            activityDetails.invitedName = null;
+        }
+
+        await logWorkspaceActivity( workspaceId, inviterUser.id, 'member_invited', activityDetails);
 
         const inviteeDetails = {email, name: existingUser?.firstName};
         const mailerSendResponse = await emailService.sendWorkspaceInviteEmail(
@@ -104,6 +159,7 @@ const acceptInvite = async (req, res) => {
 
         let user = await User.findOne({where: {email}});
         let isNewUser = false;
+        let originalInvitedLogNeedsUpdate = false;
 
         if (user) {
             const existingMember = await WorkspaceTeam.findOne({
@@ -115,8 +171,10 @@ const acceptInvite = async (req, res) => {
                 await invite.save();
                 return res.status(200).json({success: true, message: 'Already a member of this workspace', isNewUser});
             }
+            originalInvitedLogNeedsUpdate = true;
         } else {
             isNewUser = true;
+            originalInvitedLogNeedsUpdate = true;
             const tempPassword = crypto.randomBytes(16).toString('hex');
             const generatedUsername = await generateUsername(email);
 
@@ -137,23 +195,28 @@ const acceptInvite = async (req, res) => {
         invite.used = true;
         await invite.save();
 
-        await logWorkspaceActivity(
-            workspace.id,
-            user.id,
-            'member_invited',
-            {invitedUserId: invite.invitedById},
-        );
+        const joinedActivityDetails = {
+            joinedUserId: user.id,
+            joinedUserName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+            joinedUserEmail: user.email,
+            invitedByUserId: invite.invitedById,
+        };
 
-        await logWorkspaceActivity(
-            workspace.id,
-            user.id,
-            'member_joined',
-            {invitedUserId: invite.invitedById},
-        );
-
-        if (workspace.user) {
-            acceptInviteNotification(workspace.user.id, workspace, user);
+        await logWorkspaceActivity(workspace.id, user.id, 'member_joined', joinedActivityDetails);
+        if (originalInvitedLogNeedsUpdate) {
+            const updatedInviteLogDetails = {
+                invitedUserId: user.id,
+                invitedUserName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+            };
+            await updateActivityLogDetails(
+                workspace.id,
+                'member_invited',
+                {inviteId: invite.id},
+                updatedInviteLogDetails,
+            );
         }
+
+        if (workspace.user) acceptInviteNotification(workspace.user.id, workspace, user);
 
         res.status(200).json({success: true, message: 'Invite accepted successfully', isNewUser});
     } catch (error) {

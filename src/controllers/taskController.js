@@ -6,6 +6,7 @@ import TaskAssignee from '../models/TaskAssignee.js';
 import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
+import {Op} from 'sequelize';
 
 const errorResponse = (res, status, error) => res.status(status).json({error: error, success: false});
 const successResponse = (res, data, statusCode = 200) => res.status(statusCode).json({...data, success: true});
@@ -63,15 +64,13 @@ export const addTask = async (req, res) => {
                 userId,
             }));
             await TaskAssignee.bulkCreate(assigneeEntries);
+
+            const meta = {taskId: task.id, taskTitle: task.title, assigneeIds};
+            await logTaskActivity(task.id, req.user.id, 'assigned', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
         }
 
-        await logTaskActivity(
-            task.id,
-            req.user.id,
-            'created',
-            {taskTitle: task.title},
-        );
-
+        await logTaskActivity(task.id, req.user.id, 'created', {taskTitle: task.title});
         await logWorkspaceActivity(
             workspaceId,
             req.user.id,
@@ -135,25 +134,39 @@ export const updateTask = async (req, res) => {
             dueDate,
         });
 
+        const originalData = {...task.toJSON()};
+        const changes = {};
+        ['title', 'description', 'status', 'priority', 'dueDate'].forEach((key) => {
+            if (originalData[key] !== task[key]) changes[key] = {from: originalData[key], to: task[key]};
+        });
+
         const currentAssigneeIds = task.assignees.map((assignee) => assignee.id);
-        if (currentAssigneeIds.length > 0) {
+        const removedAssigneeIds = currentAssigneeIds.filter((id) => !assigneeIds.includes(id));
+        const newAssigneeIds = assigneeIds.filter((id) => !currentAssigneeIds.includes(id));
+
+        if (removedAssigneeIds.length > 0) {
             await TaskAssignee.destroy({
-                where: {
-                    taskId: task.id,
-                    userId: {
-                        [sequelize.Op.notIn]: assigneeIds,
-                    },
-                },
+                where: {taskId: task.id, userId: {[Op.in]: removedAssigneeIds}},
             });
+
+            const meta = {taskId: task.id, taskTitle: task.title, removedAssigneeIds};
+            await logTaskActivity(task.id, req.user.id, 'task_unassigned', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_unassigned', meta);
         }
 
-        const newAssigneeIds = assigneeIds.filter((id) => !currentAssigneeIds.includes(id));
         if (newAssigneeIds.length > 0) {
-            const assigneeEntries = newAssigneeIds.map((userId) => ({
-                taskId: task.id,
-                userId,
-            }));
-            await TaskAssignee.bulkCreate(assigneeEntries);
+            const newEntries = newAssigneeIds.map((userId) => ({taskId: task.id, userId}));
+            await TaskAssignee.bulkCreate(newEntries);
+
+            const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: newAssigneeIds};
+            await logTaskActivity(task.id, req.user.id, 'task_assigned', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
+        }
+
+        if (Object.keys(changes).length > 0) {
+            const meta = {taskId: task.id, taskTitle: task.title, changes};
+            await logTaskActivity(task.id, req.user.id, 'task_updated', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
         }
 
         const updatedTask = await Task.findByPk(task.id, {
@@ -167,27 +180,6 @@ export const updateTask = async (req, res) => {
                 {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
         });
-
-        const removedAssigneeIds = currentAssigneeIds.filter((id) => !assigneeIds.includes(id));
-        const addedAssigneeIds = newAssigneeIds;
-
-        if (removedAssigneeIds.length > 0) {
-            await logWorkspaceActivity(
-                workspaceId,
-                req.user.id,
-                'task_unassigned',
-                {taskId: updatedTask.id, taskTitle: updatedTask.title, previousAssigneeIds: removedAssigneeIds},
-            );
-        }
-
-        if (addedAssigneeIds.length > 0) {
-            await logWorkspaceActivity(
-                workspaceId,
-                req.user.id,
-                'task_assigned',
-                {taskId: updatedTask.id, taskTitle: updatedTask.title, assigneeIds: addedAssigneeIds},
-            );
-        }
 
         return successResponse(res, {data: updatedTask.toJSON()});
     } catch (error) {
@@ -238,8 +230,13 @@ export const deleteTask = async (req, res) => {
         const task = await Task.findOne({where: {id: taskId, workspaceId}});
         if (!task) return errorResponse(res, 404, 'Task not found in this workspace');
 
+        const meta = {taskId: task.id, taskTitle: task.title};
+
         await TaskAssignee.destroy({where: {taskId: task.id}});
         await task.destroy();
+
+        await logTaskActivity(task.id, req.user.id, 'deleted', meta);
+        await logWorkspaceActivity(workspaceId, req.user.id, 'task_deleted', meta);
 
         return successResponse(res, {message: 'Task deleted successfully'});
     } catch (error) {
