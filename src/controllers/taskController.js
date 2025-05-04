@@ -108,7 +108,7 @@ export const updateTask = async (req, res) => {
         const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
         const {title, description, status, priority, dueDate, assignees} = req.body;
-        const assigneeIds = await getAssignees(assignees);
+        const newAssigneeIds = await getAssignees(assignees);
 
         const task = await Task.findOne({
             where: {
@@ -126,47 +126,68 @@ export const updateTask = async (req, res) => {
             return errorResponse(res, 404, 'Task not found in this workspace');
         }
 
-        await task.update({
-            title,
-            description,
-            status,
-            priority,
-            dueDate,
+        const originalData = task.get({plain: true});
+        const originalAssigneeIds = originalData.assignees.map((assignee) => assignee.id);
+
+        const updatePayload = {};
+        if (title !== undefined) updatePayload.title = title;
+        if (description !== undefined) updatePayload.description = description;
+        if (status !== undefined) updatePayload.status = status;
+        if (priority !== undefined) updatePayload.priority = priority;
+        if (dueDate !== undefined) updatePayload.dueDate = dueDate;
+
+        if (Object.keys(updatePayload).length > 0) await task.update(updatePayload);
+
+        if (updatePayload.status !== undefined && originalData.status !== updatePayload.status) {
+            const meta = {
+                taskId: task.id,
+                taskTitle: task.title,
+                changeDetails: {field: 'status', from: originalData.status, to: updatePayload.status},
+            };
+            await logTaskActivity(task.id, req.user.id, 'status_changed', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+        }
+
+        if (updatePayload.priority !== undefined && originalData.priority !== updatePayload.priority) {
+            const meta = {
+                taskId: task.id,
+                taskTitle: task.title,
+                changeDetails: {field: 'priority', from: originalData.priority, to: updatePayload.priority},
+            };
+            await logTaskActivity(task.id, req.user.id, 'priority_changed', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+        }
+
+        const generalChanges = {};
+        ['title', 'description', 'dueDate'].forEach((key) => {
+            if (updatePayload[key] !== undefined && originalData[key] !== updatePayload[key]) {
+                generalChanges[key] = {from: originalData[key], to: updatePayload[key]};
+            }
         });
 
-        const originalData = {...task.toJSON()};
-        const changes = {};
-        ['title', 'description', 'status', 'priority', 'dueDate'].forEach((key) => {
-            if (originalData[key] !== task[key]) changes[key] = {from: originalData[key], to: task[key]};
-        });
+        if (Object.keys(generalChanges).length > 0) {
+            const meta = {taskId: task.id, taskTitle: task.title, changes: generalChanges};
+            await logTaskActivity(task.id, req.user.id, 'updated', meta);
+            await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+        }
 
-        const currentAssigneeIds = task.assignees.map((assignee) => assignee.id);
-        const removedAssigneeIds = currentAssigneeIds.filter((id) => !assigneeIds.includes(id));
-        const newAssigneeIds = assigneeIds.filter((id) => !currentAssigneeIds.includes(id));
+        const removedAssigneeIds = originalAssigneeIds.filter((id) => !newAssigneeIds.includes(id));
+        const addedAssigneeIds = newAssigneeIds.filter((id) => !originalAssigneeIds.includes(id));
 
         if (removedAssigneeIds.length > 0) {
-            await TaskAssignee.destroy({
-                where: {taskId: task.id, userId: {[Op.in]: removedAssigneeIds}},
-            });
-
-            const meta = {taskId: task.id, taskTitle: task.title, removedAssigneeIds};
-            await logTaskActivity(task.id, req.user.id, 'task_unassigned', meta);
+            await TaskAssignee.destroy({where: {taskId: task.id, userId: {[Op.in]: removedAssigneeIds}}});
+            const meta = {taskId: task.id, taskTitle: task.title, removedAssigneeIds: removedAssigneeIds};
+            await logTaskActivity(task.id, req.user.id, 'unassigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_unassigned', meta);
         }
 
-        if (newAssigneeIds.length > 0) {
-            const newEntries = newAssigneeIds.map((userId) => ({taskId: task.id, userId}));
+        if (addedAssigneeIds.length > 0) {
+            const newEntries = addedAssigneeIds.map((userId) => ({taskId: task.id, userId}));
             await TaskAssignee.bulkCreate(newEntries);
 
-            const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: newAssigneeIds};
-            await logTaskActivity(task.id, req.user.id, 'task_assigned', meta);
+            const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: addedAssigneeIds};
+            await logTaskActivity(task.id, req.user.id, 'assigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
-        }
-
-        if (Object.keys(changes).length > 0) {
-            const meta = {taskId: task.id, taskTitle: task.title, changes};
-            await logTaskActivity(task.id, req.user.id, 'task_updated', meta);
-            await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
         }
 
         const updatedTask = await Task.findByPk(task.id, {
