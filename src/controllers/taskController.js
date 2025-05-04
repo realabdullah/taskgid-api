@@ -30,14 +30,20 @@ const getAssignees = async (assigneeUsernames) => {
     return assigneeIds;
 };
 
-async function getWorkspaceIdFromSlug(slug) {
+const getWorkspaceIdFromSlug = async (slug) => {
     const workspace = await Workspace.findOne({where: {slug}, attributes: ['id']});
     if (!workspace) {
         // eslint-disable-next-line no-throw-literal
         throw {status: 404, message: 'Workspace not found'};
     }
     return workspace.id;
-}
+};
+
+const parseQueryArray = (queryParam) => {
+    if (!queryParam) return undefined;
+    if (Array.isArray(queryParam)) return queryParam.filter((item) => item.trim() !== '');
+    return queryParam.split(',').map((item) => item.trim()).filter((item) => item.trim() !== '');
+};
 
 
 export const addTask = async (req, res) => {
@@ -270,25 +276,74 @@ export const deleteTask = async (req, res) => {
 
 export const fetchWorkspaceTasks = async (req, res) => {
     try {
+        console.log('req: ', req.user);
         const {workspaceSlug} = req.params;
         const {page, limit, offset} = getPaginationParams(req.query);
 
+        const {search, assignee} = req.query;
+        const statusFilter = parseQueryArray(req.query.status);
+        const priorityFilter = parseQueryArray(req.query.priority);
+        const currentUserId = req.user?.id;
+        if (assignee === 'me' && !currentUserId) {
+            return errorResponse(res, 401, 'Authentication required to filter by tasks assigned to you.');
+        }
+
+
         const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        if (!workspaceId) return errorResponse(res, 404, 'Workspace not found.');
+
+        const whereConditions = {workspaceId};
+        const includeConditions = [
+            {
+                model: User,
+                as: 'assignees',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                through: {attributes: []},
+                required: false,
+            },
+            {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+        ];
+
+        if (search) {
+            whereConditions[Op.or] = [
+                {title: {[Op.iLike]: `%${search}%`}},
+                {description: {[Op.iLike]: `%${search}%`}},
+            ];
+        }
+
+        if (statusFilter && statusFilter.length > 0) {
+            const validStatuses = ['todo', 'in_progress', 'done'];
+            const filteredStatuses = statusFilter.filter((s) => validStatuses.includes(s));
+            if (filteredStatuses.length > 0) whereConditions.status = {[Op.in]: filteredStatuses};
+        }
+
+        if (priorityFilter && priorityFilter.length > 0) {
+            const validPriorities = ['low', 'medium', 'high'];
+            const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
+            if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        if (assignee) {
+            const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+            if (assigneesInclude) {
+                if (assignee === 'me') {
+                    assigneesInclude.where = {id: currentUserId};
+                    assigneesInclude.required = true;
+                } else if (assignee === 'unassigned') {
+                    whereConditions['$assignees.id$'] = {[Op.is]: null};
+                    assigneesInclude.required = false;
+                }
+            }
+        }
 
         const {count, rows: tasks} = await Task.findAndCountAll({
-            where: {workspaceId},
-            include: [
-                {
-                    model: User,
-                    as: 'assignees',
-                    attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
-                    through: {attributes: []},
-                },
-                {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
-            ],
+            where: whereConditions,
+            include: includeConditions,
             limit,
             offset,
             order: [['createdAt', 'DESC']],
+            distinct: true,
+            subQuery: false,
         });
 
         const response = createPaginatedResponse(
