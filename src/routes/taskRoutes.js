@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-    addTask, updateTask, deleteTask, fetchWorkspaceTask, fetchWorkspaceTasks,
+    addTask, updateTask, deleteTask, fetchWorkspaceTask, fetchWorkspaceTasks, getTaskActivities,
 } from '../controllers/taskController.js';
 import {getTaskComments, addTaskComment} from '../controllers/commentController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
@@ -16,6 +16,8 @@ router.use(authMiddleware);
 // Task routes (slug is now inherited from parent route via mergeParams)
 router.get('/', checkMemberMiddleware, fetchWorkspaceTasks);
 router.get('/:id', checkMemberMiddleware, fetchWorkspaceTask);
+router.get('/:id/activities', checkMemberMiddleware, getTaskActivities);
+
 router.post('/', checkMemberMiddleware, validateTaskInput, addTask);
 router.put('/:id', checkMemberMiddleware, validateTaskInput, updateTask);
 router.delete('/:id', checkMemberMiddleware, deleteTask);

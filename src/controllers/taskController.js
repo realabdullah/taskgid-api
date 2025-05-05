@@ -7,6 +7,7 @@ import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js'
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 import {Op} from 'sequelize';
+import TaskActivity from '../models/TaskActivity.js';
 
 const errorResponse = (res, status, error) => res.status(status).json({error: error, success: false});
 const successResponse = (res, data, statusCode = 200) => res.status(statusCode).json({...data, success: true});
@@ -357,5 +358,38 @@ export const fetchWorkspaceTasks = async (req, res) => {
         console.error('Fetch Tasks Error:', error);
         const statusCode = error.status || 400;
         return errorResponse(res, statusCode, error.message || 'Failed to fetch tasks');
+    }
+};
+
+export const getTaskActivities = async (req, res) => {
+    try {
+        const {workspaceSlug, id: taskId} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        const {page, limit, offset} = getPaginationParams(req.query);
+
+        const task = await Task.findOne({
+            where: {id: taskId, workspaceId},
+        });
+
+        if (!task) return errorResponse(res, 404, 'Task not found in this workspace');
+
+        const {count, rows: activities} = await TaskActivity.findAndCountAll({
+            where: {taskId},
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            }],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        const response = createPaginatedResponse(activities, count, page, limit);
+        res.json(response);
+    } catch (error) {
+        console.error('Get Task Activities Error:', error);
+        const statusCode = error.status || 500;
+        return errorResponse(res, statusCode, error.message || 'Failed to fetch task activities');
     }
 };
