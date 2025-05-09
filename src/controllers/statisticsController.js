@@ -4,11 +4,9 @@ import {Workspace} from '../models/Workspace.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
 import TaskActivity from '../models/TaskActivity.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
+import {errorResponse} from '../utils/responseUtils.js';
 import {Op} from 'sequelize';
 import sequelize from '../config/database.js';
-
-const errorResponse = (res, status, message) =>
-    res.status(status).json({error: message, success: false});
 
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 const TASK_PRIORITIES = ['low', 'medium', 'high'];

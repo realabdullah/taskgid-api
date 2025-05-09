@@ -6,9 +6,7 @@ import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
 import {processAndSaveFile, getFileInfo, deleteFile} from '../utils/fileUpload.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
-
-// Helper for standardized error responses
-const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
+import {errorResponse} from '../utils/responseUtils.js';
 
 /**
  * Handles file upload and attachment creation for a Task.

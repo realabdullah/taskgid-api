@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import {logWorkspaceActivity} from '../utils/activityLogger.js';
 import {Op} from 'sequelize';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 
 const updateActivityLogDetails = async (workspaceId, activityType, findCriteria, newDetails) => {
     console.log(
@@ -132,7 +133,7 @@ const acceptInvite = async (req, res) => {
     const {token} = req.body;
 
     if (!token) {
-        return res.status(400).json({error: 'Invite token is required', success: false});
+        return errorResponse(res, 400, 'Invite token is required');
     }
 
     try {
@@ -140,12 +141,12 @@ const acceptInvite = async (req, res) => {
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET);
         } catch (err) {
-            return res.status(401).json({error: 'Invalid or expired invite token', success: false});
+            return errorResponse(res, 401, 'Invalid or expired invite token');
         }
 
         const invite = await Invite.findOne({where: {token, used: false}});
         if (!invite) {
-            return res.status(404).json({error: 'Invite not found or already used', success: false});
+            return errorResponse(res, 404, 'Invite not found or already used');
         }
 
         const {email, workspaceId} = decoded;
@@ -154,7 +155,7 @@ const acceptInvite = async (req, res) => {
             include: [{model: User, as: 'user', attributes: ['id', 'firstName']}],
         });
         if (!workspace) {
-            return res.status(404).json({error: 'Associated workspace not found', success: false});
+            return errorResponse(res, 404, 'Associated workspace not found');
         }
 
         let user = await User.findOne({where: {email}});
@@ -169,7 +170,7 @@ const acceptInvite = async (req, res) => {
             if (existingMember) {
                 invite.used = true;
                 await invite.save();
-                return res.status(200).json({success: true, message: 'Already a member of this workspace', isNewUser});
+                return successResponse(res, {success: true, message: 'Already a member of this workspace', isNewUser});
             }
             originalInvitedLogNeedsUpdate = true;
         } else {
@@ -218,16 +219,13 @@ const acceptInvite = async (req, res) => {
 
         if (workspace.user) acceptInviteNotification(workspace.user.id, workspace, user);
 
-        res.status(200).json({success: true, message: 'Invite accepted successfully', isNewUser});
+        return successResponse(res, {message: 'Invite accepted successfully', isNewUser});
     } catch (error) {
         console.error('Accept invite error:', error);
         if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({
-                error: 'Failed due to data conflict (e.g., username). Please try again or contact support.',
-                success: false,
-            });
+            return errorResponse(res, 400, 'Failed due to data conflict (e.g., username). Please try again or contact support.');
         }
-        res.status(500).json({error: 'Failed to accept invite due to server error', success: false});
+        return errorResponse(res, 500, 'Failed to accept invite due to server error');
     }
 };
 
