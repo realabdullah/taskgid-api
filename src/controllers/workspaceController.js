@@ -9,11 +9,9 @@ import {
     createPaginatedResponse,
 } from '../utils/pagination.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
+import {errorResponse} from '../utils/responseUtils.js';
 import {Op, Sequelize} from 'sequelize';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
-
-const errorResponse = (res, status, message) =>
-    res.status(status).json({error: message, success: false});
 
 async function findWorkspaceBySlugAndCheckAccess(
     slug,

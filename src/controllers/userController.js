@@ -2,12 +2,8 @@ import User from '../models/User.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
 import Auth from '../utils/auth.js';
 import emailService from '../utils/emailService.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import 'dotenv/config';
-
-const errorResponse = (res, status, message) =>
-    res.status(status).json({error: message, success: false});
-const successResponse = (res, data, statusCode = 200) =>
-    res.status(statusCode).json({...data, success: true});
 
 export const register = async (req, res) => {
     try {

@@ -4,14 +4,11 @@ import User from '../models/User.js';
 import {Workspace} from '../models/Workspace.js';
 import TaskAssignee from '../models/TaskAssignee.js';
 import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 import {Op} from 'sequelize';
 import TaskActivity from '../models/TaskActivity.js';
-
-const errorResponse = (res, status, error) => res.status(status).json({error: error, success: false});
-const successResponse = (res, data, statusCode = 200) => res.status(statusCode).json({...data, success: true});
-
 
 const getAssignee = async (assigneeUsername) => {
     if (!assigneeUsername) return null;

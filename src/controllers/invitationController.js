@@ -3,9 +3,8 @@ import Invite from '../models/Invite.js';
 import {Workspace} from '../models/Workspace.js';
 import User from '../models/User.js';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
+import {errorResponse} from '../utils/responseUtils.js';
 import {Op} from 'sequelize';
-
-const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
 
 export const getPendingInvitations = async (req, res) => {
     const {page, limit, offset} = getPaginationParams(req);

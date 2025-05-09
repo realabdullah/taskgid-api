@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import {UAParser} from 'ua-parser-js';
 import 'dotenv/config';
 import Auth from '../utils/auth.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 
 const MAX_DEVICES_PER_USER = 5;
 const CHALLENGE_TIMEOUT = 60000; // 1 minute
@@ -30,10 +31,6 @@ const rpOrigin = process.env.RPORIGIN;
 if (!rpName || !rpId || !rpOrigin) {
     throw new Error('Missing required environment variables for WebAuthn configuration');
 }
-
-const errorResponse = (res, status, message) => res.status(status).json({error: message, success: false});
-const successResponse = (res, data, statusCode = 200) =>
-    res.status(statusCode).json({...data, success: true});
 
 export const generateRegistrationOptionsWithAuthn = async (req, res) => {
     try {
