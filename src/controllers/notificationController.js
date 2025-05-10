@@ -1,8 +1,8 @@
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
-import {Task} from '../models/Task.js';
+import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
-import {successResponse, errorResponse} from '../utils/responseHandler.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 
 /**
  * Get notifications for a user
