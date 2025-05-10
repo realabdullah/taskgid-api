@@ -331,3 +331,24 @@ export const updateUserProfile = async (req, res) => {
         return errorResponse(res, 500, 'Failed to update profile');
     }
 };
+
+export const updateFCMToken = async (req, res) => {
+    try {
+        const {fcmToken} = req.body;
+        const userId = req.user.id;
+
+        if (!fcmToken) {
+            return errorResponse(res, 400, 'FCM token is required');
+        }
+
+        await User.update(
+            {fcmToken},
+            {where: {id: userId}},
+        );
+
+        return successResponse(res, 200, 'FCM token updated successfully');
+    } catch (error) {
+        console.error('Update FCM Token Error:', error);
+        return errorResponse(res, 500, 'Failed to update FCM token');
+    }
+};
