@@ -4,11 +4,11 @@ import Comment from '../models/Comment.js';
 import User from '../models/User.js';
 import Task from '../models/Task.js';
 import {Workspace} from '../models/Workspace.js';
+import {notificationHandler} from '../services/notificationService.js';
 import {
     getPaginationParams,
     createPaginatedResponse,
 } from '../utils/pagination.js';
-import {sendMentionNotification} from '../utils/pusherService.js';
 import {Op} from 'sequelize';
 import 'dotenv/config';
 import CommentLike from '../models/CommentLike.js';
@@ -63,7 +63,7 @@ const updateMentionsInComment = async (
                         attributes: ['id'],
                     },
                 ],
-                attributes: ['id', 'workspaceId'],
+                attributes: ['id', 'workspaceId', 'title'],
             });
             if (task && task.workspace) {
                 const mentionedUsers = await findMentionedUsersInWorkspace(
@@ -72,17 +72,18 @@ const updateMentionsInComment = async (
                 );
                 mentionedUserIds = mentionedUsers.map((user) => user.id);
 
-                mentionedUsers.forEach((mentionedUser) => {
+                // Send notifications to mentioned users
+                for (const mentionedUser of mentionedUsers) {
                     if (mentionedUser.id !== authorUser.id) {
-                        sendMentionNotification(
+                        await notificationHandler.sendMentionNotification(
                             mentionedUser.id,
-                            commentInstance,
-                            authorUser,
-                            task,
-                            task.workspace,
+                            authorUser.id,
+                            authorUser.firstName || authorUser.username,
+                            commentInstance.id,
+                            'comment',
                         );
                     }
-                });
+                }
             }
         } catch (error) {
             console.error(
@@ -97,11 +98,11 @@ const updateMentionsInComment = async (
 
 export const getTaskComments = async (req, res) => {
     try {
-        const {taskId} = req.params;
+        const {id} = req.params;
         const {page, limit, offset} = getPaginationParams(req.query);
 
         const {count, rows: comments} = await Comment.findAndCountAll({
-            where: {taskId: taskId, parentId: null},
+            where: {taskId: id, parentId: null},
             include: [
                 {
                     model: User,
@@ -243,12 +244,60 @@ export const addTaskComment = async (req, res) => {
             transaction: t,
         });
 
+        // Get task details for notification
+        const task = await Task.findByPk(taskId, {
+            include: [
+                {
+                    model: User,
+                    as: 'assignees',
+                    attributes: ['id'],
+                },
+                {
+                    model: User,
+                    as: 'creator',
+                    attributes: ['id'],
+                },
+            ],
+            transaction: t,
+        });
+
+        // Get users to notify (assignees, creator, and parent comment author if it's a reply)
+        const usersToNotify = new Set([
+            ...task.assignees.map((a) => a.id),
+            task.createdById,
+        ]);
+
+        if (parentComment) {
+            usersToNotify.add(parentComment.userId);
+        }
+
+        // Remove the comment author from the notification list
+        usersToNotify.delete(userId);
+
+        // Send notifications to all relevant users
+        if (usersToNotify.size > 0) {
+            await notificationHandler.sendCommentNotification(
+                taskId,
+                task.title,
+                comment.id,
+                userId,
+                req.user.firstName || req.user.username,
+                Array.from(usersToNotify),
+            );
+        }
+
         await t.commit();
-        res.status(201).json({success: true, comment: populatedComment});
+        return res.status(201).json({
+            success: true,
+            data: populatedComment.toJSON(),
+        });
     } catch (error) {
         await t.rollback();
-        console.error('Error adding comment:', error);
-        res.status(500).json({success: false, error: 'Failed to add comment'});
+        console.error('Add Comment Error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to add comment',
+        });
     }
 };
 

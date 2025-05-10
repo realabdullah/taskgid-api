@@ -5,6 +5,7 @@ import {Workspace} from '../models/Workspace.js';
 import TaskAssignee from '../models/TaskAssignee.js';
 import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
+import {notificationHandler} from '../services/notificationService.js';
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 import {Op} from 'sequelize';
@@ -72,6 +73,14 @@ export const addTask = async (req, res) => {
             const meta = {taskId: task.id, taskTitle: task.title, assigneeIds};
             await logTaskActivity(task.id, req.user.id, 'assigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
+
+            await notificationHandler.sendTaskAssignmentNotification(
+                task.id,
+                task.title,
+                req.user.id,
+                req.user.firstName || req.user.username,
+                assigneeIds,
+            );
         }
 
         await logTaskActivity(task.id, req.user.id, 'created', {taskTitle: task.title});
@@ -142,6 +151,8 @@ export const updateTask = async (req, res) => {
 
         if (Object.keys(updatePayload).length > 0) await task.update(updatePayload);
 
+        const usersToNotify = new Set([...newAssigneeIds, task.createdById]);
+
         if (updatePayload.status !== undefined && originalData.status !== updatePayload.status) {
             const meta = {
                 taskId: task.id,
@@ -150,6 +161,14 @@ export const updateTask = async (req, res) => {
             };
             await logTaskActivity(task.id, req.user.id, 'status_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+
+            await notificationHandler.sendTaskUpdateNotification(
+                task.id,
+                task.title,
+                req.user.id,
+                req.user.firstName || req.user.username,
+                Array.from(usersToNotify),
+            );
         }
 
         if (updatePayload.priority !== undefined && originalData.priority !== updatePayload.priority) {
@@ -160,6 +179,14 @@ export const updateTask = async (req, res) => {
             };
             await logTaskActivity(task.id, req.user.id, 'priority_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+
+            await notificationHandler.sendTaskUpdateNotification(
+                task.id,
+                task.title,
+                req.user.id,
+                req.user.firstName || req.user.username,
+                Array.from(usersToNotify),
+            );
         }
 
         const generalChanges = {};
@@ -173,6 +200,14 @@ export const updateTask = async (req, res) => {
             const meta = {taskId: task.id, taskTitle: task.title, changes: generalChanges};
             await logTaskActivity(task.id, req.user.id, 'updated', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
+
+            await notificationHandler.sendTaskUpdateNotification(
+                task.id,
+                task.title,
+                req.user.id,
+                req.user.firstName || req.user.username,
+                Array.from(usersToNotify),
+            );
         }
 
         const removedAssigneeIds = originalAssigneeIds.filter((id) => !newAssigneeIds.includes(id));
@@ -192,6 +227,14 @@ export const updateTask = async (req, res) => {
             const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: addedAssigneeIds};
             await logTaskActivity(task.id, req.user.id, 'assigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
+
+            await notificationHandler.sendTaskAssignmentNotification(
+                task.id,
+                task.title,
+                req.user.id,
+                req.user.firstName || req.user.username,
+                addedAssigneeIds,
+            );
         }
 
         const updatedTask = await Task.findByPk(task.id, {

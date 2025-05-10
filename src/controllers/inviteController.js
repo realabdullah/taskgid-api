@@ -12,6 +12,7 @@ import {logWorkspaceActivity} from '../utils/activityLogger.js';
 import {Op} from 'sequelize';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
+import {notificationHandler} from '../services/notificationService.js';
 
 const updateActivityLogDetails = async (
     workspaceId,
@@ -127,6 +128,13 @@ const inviteUser = async (req, res) => {
             activityDetails.invitedName = `${existingUser.firstName || ''} ${
                 existingUser.lastName || ''
             }`.trim();
+
+            await notificationHandler.sendWorkspaceInviteNotification(
+                workspace.id,
+                workspace.name,
+                inviterUser.id,
+                existingUser.id,
+            );
         } else {
             activityDetails.invitedName = null;
         }

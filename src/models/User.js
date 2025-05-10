@@ -118,6 +118,11 @@ User.init(
                 },
             },
         },
+        fcmToken: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'fcm_token',
+        },
         password: {
             type: DataTypes.STRING,
             allowNull: false,
