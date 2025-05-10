@@ -1,12 +1,17 @@
 /* eslint-disable require-jsdoc */
+import sequelize from '../config/database.js';
 import Comment from '../models/Comment.js';
 import User from '../models/User.js';
 import Task from '../models/Task.js';
 import {Workspace} from '../models/Workspace.js';
-import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
+import {
+    getPaginationParams,
+    createPaginatedResponse,
+} from '../utils/pagination.js';
 import {sendMentionNotification} from '../utils/pusherService.js';
 import {Op} from 'sequelize';
 import 'dotenv/config';
+import CommentLike from '../models/CommentLike.js';
 
 const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
     if (!usernames || usernames.length === 0) {
@@ -18,20 +23,26 @@ const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
                 [Op.in]: usernames,
             },
         },
-        include: [{
-            model: Workspace,
-            as: 'workspaces',
-            where: {id: workspaceId},
-            attributes: [],
-            required: true,
-        }],
+        include: [
+            {
+                model: Workspace,
+                as: 'workspaces',
+                where: {id: workspaceId},
+                attributes: [],
+                required: true,
+            },
+        ],
         attributes: ['id', 'username', 'firstName'],
     });
 };
 
-const processMentionsAndNotify = async (comment, authorUser, taskId) => {
+const updateMentionsInComment = async (
+    commentInstance,
+    authorUser,
+    taskIdForContext,
+) => {
     const mentionRegex = /@(\w+)/g;
-    const content = comment.content || '';
+    const content = commentInstance.content || '';
     const mentionedUsernames = new Set();
     let match;
 
@@ -39,100 +50,427 @@ const processMentionsAndNotify = async (comment, authorUser, taskId) => {
         mentionedUsernames.add(match[1]);
     }
 
-    if (mentionedUsernames.size === 0) {
-        return;
-    }
+    const mentionedUsernameArray = [...mentionedUsernames];
+    let mentionedUserIds = [];
 
-    try {
-        const task = await Task.findByPk(taskId, {
-            include: [{
-                model: Workspace,
-                as: 'workspace',
-                attributes: ['id', 'title'],
-            }],
-            attributes: ['id', 'title', 'workspaceId'],
-        });
-
-        if (!task || !task.workspace) {
-            console.error(`Task or Workspace not found for comment ${comment.id}, cannot process mentions.`);
-            return;
-        }
-
-        const workspaceId = task.workspace.id;
-        const mentionedUsers = await findMentionedUsersInWorkspace([...mentionedUsernames], workspaceId);
-
-        mentionedUsers.forEach((mentionedUser) => {
-            if (mentionedUser.id !== authorUser.id) {
-                sendMentionNotification(
-                    mentionedUser.id,
-                    comment,
-                    authorUser,
-                    task,
-                    task.workspace,
+    if (mentionedUsernameArray.length > 0) {
+        try {
+            const task = await Task.findByPk(taskIdForContext, {
+                include: [
+                    {
+                        model: Workspace,
+                        as: 'workspace',
+                        attributes: ['id'],
+                    },
+                ],
+                attributes: ['id', 'workspaceId'],
+            });
+            if (task && task.workspace) {
+                const mentionedUsers = await findMentionedUsersInWorkspace(
+                    mentionedUsernameArray,
+                    task.workspace.id,
                 );
+                mentionedUserIds = mentionedUsers.map((user) => user.id);
+
+                mentionedUsers.forEach((mentionedUser) => {
+                    if (mentionedUser.id !== authorUser.id) {
+                        sendMentionNotification(
+                            mentionedUser.id,
+                            commentInstance,
+                            authorUser,
+                            task,
+                            task.workspace,
+                        );
+                    }
+                });
             }
-        });
-    } catch (error) {
-        console.error(`Error processing mentions for comment ${comment.id}:`, error);
+        } catch (error) {
+            console.error(
+                `Error processing mentions for comment ${commentInstance.id} during update:`,
+                error,
+            );
+        }
     }
+    await commentInstance.update({mentions: mentionedUserIds});
+    return commentInstance;
 };
 
 export const getTaskComments = async (req, res) => {
     try {
-        const {id} = req.params;
+        const {taskId} = req.params;
         const {page, limit, offset} = getPaginationParams(req.query);
 
         const {count, rows: comments} = await Comment.findAndCountAll({
-            where: {taskId: id},
-            include: [{
-                model: User,
-                as: 'user',
-                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
-            }],
+            where: {taskId: taskId, parentId: null},
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: [
+                        'id',
+                        'username',
+                        'firstName',
+                        'lastName',
+                        'profilePicture',
+                    ],
+                },
+            ],
             limit,
             offset,
-            order: [['createdAt', 'DESC']],
+            order: [['createdAt', 'ASC']],
         });
 
         const response = createPaginatedResponse(comments, count, page, limit);
         res.json(response);
     } catch (error) {
-        console.error('Error fetching comments:', error);
-        res.status(500).json({success: false, error: 'Failed to fetch comments'});
+        console.error('Error fetching task comments:', error);
+        res
+            .status(500)
+            .json({success: false, error: 'Failed to fetch task comments'});
+    }
+};
+
+export const getCommentReplies = async (req, res) => {
+    try {
+        const {id: taskId, commentId} = req.params;
+        const {page, limit, offset} = getPaginationParams(req.query);
+
+        const parentComment = await Comment.findByPk(commentId);
+        if (!parentComment) {
+            return res.status(404).json({success: false, error: 'Parent comment not found'});
+        }
+
+        if (parentComment.taskId !== taskId) {
+            return res
+                .status(403)
+                .json({success: false, error: 'Parent comment does not belong to the specified task'});
+        }
+
+        const {count, rows: replies} = await Comment.findAndCountAll({
+            where: {parentId: commentId},
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: [
+                        'id',
+                        'username',
+                        'firstName',
+                        'lastName',
+                        'profilePicture',
+                    ],
+                },
+            ],
+            limit,
+            offset,
+            order: [['createdAt', 'ASC']],
+        });
+
+        const response = createPaginatedResponse(replies, count, page, limit);
+        res.json(response);
+    } catch (error) {
+        console.error('Error fetching comment replies:', error);
+        res
+            .status(500)
+            .json({success: false, error: 'Failed to fetch comment replies'});
     }
 };
 
 export const addTaskComment = async (req, res) => {
+    const t = await sequelize.transaction();
     try {
-        const content = req.body.content;
-        const taskId = req.body.taskId;
+        const {taskId} = req.params;
+        const {content, parentId} = req.body;
         const userId = req.user.id;
 
         if (!content || !taskId) {
-            return res.status(400).json({success: false, error: 'Comment content and taskId are required'});
+            await t.rollback();
+            return res
+                .status(400)
+                .json({
+                    success: false,
+                    error: 'Comment content and taskId are required',
+                });
         }
 
-        const comment = await Comment.create({
-            content,
-            taskId,
-            userId,
-        });
+        let parentComment = null;
+        if (parentId) {
+            parentComment = await Comment.findOne({
+                where: {id: parentId, taskId: taskId},
+                transaction: t,
+            });
+            if (!parentComment) {
+                await t.rollback();
+                return res
+                    .status(404)
+                    .json({
+                        success: false,
+                        error: 'Parent comment not found or does not belong to this task',
+                    });
+            }
+        }
+
+        let comment = await Comment.create(
+            {
+                content,
+                taskId,
+                userId,
+                parentId,
+            },
+            {transaction: t},
+        );
+
+        if (parentComment) {
+            await parentComment.increment('replyCount', {transaction: t});
+        }
+
+        comment = await updateMentionsInComment(comment, req.user, taskId);
 
         const populatedComment = await Comment.findByPk(comment.id, {
-            include: [{
-                model: User,
-                as: 'user',
-                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
-            }],
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: [
+                        'id',
+                        'username',
+                        'firstName',
+                        'lastName',
+                        'profilePicture',
+                    ],
+                },
+            ],
+            transaction: t,
         });
 
-        processMentionsAndNotify(populatedComment, req.user, taskId).catch((err) => {
-            console.error('Async mention processing failed:', err);
-        });
-
+        await t.commit();
         res.status(201).json({success: true, comment: populatedComment});
     } catch (error) {
+        await t.rollback();
         console.error('Error adding comment:', error);
         res.status(500).json({success: false, error: 'Failed to add comment'});
+    }
+};
+
+export const updateComment = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const {id: taskId, commentId} = req.params;
+        const {content} = req.body;
+        const userId = req.user.id;
+
+        if (!content) {
+            await t.rollback();
+            return res
+                .status(400)
+                .json({success: false, error: 'Content is required'});
+        }
+
+        const comment = await Comment.findByPk(commentId, {transaction: t});
+
+        if (!comment) {
+            await t.rollback();
+            return res
+                .status(404)
+                .json({success: false, error: 'Comment not found'});
+        }
+
+        if (comment.taskId !== taskId) {
+            await t.rollback();
+            return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
+        }
+
+        if (comment.userId !== userId) {
+            await t.rollback();
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error: 'You are not authorized to update this comment',
+                });
+        }
+
+        comment.content = content;
+        await comment.save({transaction: t});
+
+        const updatedCommentWithMentions = await updateMentionsInComment(
+            comment,
+            req.user,
+            comment.taskId,
+        );
+
+        const populatedComment = await Comment.findByPk(
+            updatedCommentWithMentions.id,
+            {
+                include: [
+                    {
+                        model: User,
+                        as: 'user',
+                        attributes: [
+                            'id',
+                            'username',
+                            'firstName',
+                            'lastName',
+                            'profilePicture',
+                        ],
+                    },
+                ],
+                transaction: t,
+            },
+        );
+
+        await t.commit();
+        res.json({success: true, comment: populatedComment});
+    } catch (error) {
+        await t.rollback();
+        console.error('Error updating comment:', error);
+        res.status(500).json({success: false, error: 'Failed to update comment'});
+    }
+};
+
+export const deleteComment = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const {id: taskId, commentId} = req.params;
+        const userId = req.user.id;
+
+        const comment = await Comment.findByPk(commentId, {
+            include: [{model: Comment, as: 'parent'}],
+            transaction: t,
+        });
+
+        if (!comment) {
+            await t.rollback();
+            return res
+                .status(404)
+                .json({success: false, error: 'Comment not found'});
+        }
+
+        if (comment.taskId !== taskId) {
+            await t.rollback();
+            return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
+        }
+
+        if (comment.userId !== userId) {
+            await t.rollback();
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error: 'You are not authorized to delete this comment',
+                });
+        }
+
+        await comment.destroy({transaction: t});
+
+        if (comment.parentId && comment.parent) {
+            await comment.parent.decrement('replyCount', {transaction: t});
+        }
+
+        await t.commit();
+        res
+            .status(200)
+            .json({success: true, message: 'Comment deleted successfully'});
+    } catch (error) {
+        await t.rollback();
+        console.error('Error deleting comment:', error);
+        res.status(500).json({success: false, error: 'Failed to delete comment'});
+    }
+};
+
+export const likeComment = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const {id: taskId, commentId} = req.params;
+        const userId = req.user.id;
+
+        const comment = await Comment.findByPk(commentId, {transaction: t});
+
+        if (!comment) {
+            await t.rollback();
+            return res.status(404).json({success: false, error: 'Comment not found'});
+        }
+
+        if (comment.taskId !== taskId) {
+            await t.rollback();
+            return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
+        }
+
+        // Check if user has already liked the comment
+        const existingLike = await CommentLike.findOne({
+            where: {
+                commentId,
+                userId,
+            },
+            transaction: t,
+        });
+
+        if (existingLike) {
+            await t.rollback();
+            return res.status(400).json({success: false, error: 'You have already liked this comment'});
+        }
+
+        // Create the like and increment the like count atomically
+        await Promise.all([
+            CommentLike.create({
+                commentId,
+                userId,
+            }, {transaction: t}),
+            comment.increment('likeCount', {transaction: t}),
+        ]);
+
+        await t.commit();
+        res.status(201).json({success: true, message: 'Comment liked successfully'});
+    } catch (error) {
+        await t.rollback();
+        console.error('Error liking comment:', error);
+        res.status(500).json({success: false, error: 'Failed to like comment'});
+    }
+};
+
+export const unlikeComment = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const {id: taskId, commentId} = req.params;
+        const userId = req.user.id;
+
+        const comment = await Comment.findByPk(commentId, {transaction: t});
+
+        if (!comment) {
+            await t.rollback();
+            return res.status(404).json({success: false, error: 'Comment not found'});
+        }
+
+        if (comment.taskId !== taskId) {
+            await t.rollback();
+            return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
+        }
+
+        // Check if user has liked the comment
+        const existingLike = await CommentLike.findOne({
+            where: {
+                commentId,
+                userId,
+            },
+            transaction: t,
+        });
+
+        if (!existingLike) {
+            await t.rollback();
+            return res.status(400).json({success: false, error: 'You have not liked this comment'});
+        }
+
+        // Delete the like and decrement the like count atomically
+        await Promise.all([
+            existingLike.destroy({transaction: t}),
+            comment.decrement('likeCount', {transaction: t}),
+        ]);
+
+        await t.commit();
+        res.status(200).json({success: true, message: 'Comment unliked successfully'});
+    } catch (error) {
+        await t.rollback();
+        console.error('Error unliking comment:', error);
+        res.status(500).json({success: false, error: 'Failed to unlike comment'});
     }
 };
