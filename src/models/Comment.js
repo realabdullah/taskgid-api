@@ -60,16 +60,16 @@ const Comment = sequelize.define('Comment', {
     paranoid: true,
     indexes: [
         {
-            fields: ['taskId'],
+            fields: ['task_id'],
         },
         {
-            fields: ['userId'],
+            fields: ['user_id'],
         },
         {
-            fields: ['parentId'],
+            fields: ['parent_id'],
         },
         {
-            fields: ['createdAt'],
+            fields: ['created_at'],
         },
     ],
 });

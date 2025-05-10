@@ -78,8 +78,8 @@ TaskAssignee.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
 TaskAssignee.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 
 // CommentLike associations
-CommentLike.belongsTo(Comment, {foreignKey: 'commentId', as: 'comment'});
-CommentLike.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+CommentLike.belongsTo(Comment, {foreignKey: 'commentId', as: 'commentRef'});
+CommentLike.belongsTo(User, {foreignKey: 'userId', as: 'userRef'});
 
 /**
  * Sets up all model associations
