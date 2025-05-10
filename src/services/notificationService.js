@@ -1,8 +1,8 @@
 import Pusher from 'pusher';
 import admin from 'firebase-admin';
 import 'dotenv/config';
-import {User} from '../models';
-import {Workspace} from '../models';
+import User from '../models/User.js';
+import {Workspace} from '../models/Workspace.js';
 import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 import {validateNotificationData} from '../utils/notificationValidator.js';
 import Notification from '../models/Notification.js';

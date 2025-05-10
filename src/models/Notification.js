@@ -1,7 +1,7 @@
 import {DataTypes} from 'sequelize';
 import sequelize from '../config/database.js';
 import User from './User.js';
-import {Task} from './Task.js';
+import Task from './Task.js';
 import Comment from './Comment.js';
 
 const Notification = sequelize.define('Notification', {
