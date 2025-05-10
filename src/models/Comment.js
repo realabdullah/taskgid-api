@@ -49,9 +49,29 @@ const Comment = sequelize.define('Comment', {
         allowNull: false,
         defaultValue: 0,
     },
+    replyCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
 }, {
     tableName: 'comments',
     timestamps: true,
+    paranoid: true,
+    indexes: [
+        {
+            fields: ['taskId'],
+        },
+        {
+            fields: ['userId'],
+        },
+        {
+            fields: ['parentId'],
+        },
+        {
+            fields: ['createdAt'],
+        },
+    ],
 });
 
 export default Comment;

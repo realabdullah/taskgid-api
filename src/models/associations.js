@@ -12,6 +12,7 @@ import Invite from './Invite.js';
 import WorkspaceTeam from './WorkspaceTeam.js';
 import WorkspaceActivity from './WorkspaceActivity.js';
 import TaskAssignee from './TaskAssignee.js';
+import CommentLike from './CommentLike.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -22,6 +23,7 @@ User.hasMany(Comment, {foreignKey: 'userId', as: 'comments'});
 User.hasMany(Attachment, {foreignKey: 'userId', as: 'attachments'});
 User.hasMany(Authn, {foreignKey: 'userId', as: 'authns'});
 User.hasMany(WorkspaceActivity, {foreignKey: 'userId', as: 'workspaceActivities'});
+User.hasMany(CommentLike, {foreignKey: 'userId', as: 'commentLikes'});
 
 // Workspace associations
 Workspace.belongsTo(User, {foreignKey: 'userId', as: 'user'});
@@ -49,6 +51,7 @@ Comment.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 Comment.belongsTo(Comment, {foreignKey: 'parentId', as: 'parent'});
 Comment.hasMany(Comment, {foreignKey: 'parentId', as: 'replies'});
 Comment.hasMany(Attachment, {foreignKey: 'commentId', as: 'attachments'});
+Comment.hasMany(CommentLike, {foreignKey: 'commentId', as: 'likes'});
 
 // Attachment associations
 Attachment.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
@@ -74,11 +77,14 @@ TaskActivity.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 TaskAssignee.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
 TaskAssignee.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 
+// CommentLike associations
+CommentLike.belongsTo(Comment, {foreignKey: 'commentId', as: 'comment'});
+CommentLike.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+
 /**
  * Sets up all model associations
  * @return {void}
  */
 export default function setupAssociations() {
-    // This function is called after all models are initialized
     console.log('Model associations have been set up');
 }
