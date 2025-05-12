@@ -123,6 +123,11 @@ User.init(
             allowNull: true,
             field: 'fcm_token',
         },
+        knockToken: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'knock_token',
+        },
         password: {
             type: DataTypes.STRING,
             allowNull: false,

@@ -4,7 +4,7 @@ import Comment from '../models/Comment.js';
 import User from '../models/User.js';
 import Task from '../models/Task.js';
 import {Workspace} from '../models/Workspace.js';
-import {notificationHandler} from '../services/notificationService.js';
+import notificationService from '../services/notificationService.js';
 import {
     getPaginationParams,
     createPaginatedResponse,
@@ -75,7 +75,7 @@ const updateMentionsInComment = async (
                 // Send notifications to mentioned users
                 for (const mentionedUser of mentionedUsers) {
                     if (mentionedUser.id !== authorUser.id) {
-                        await notificationHandler.sendMentionNotification(
+                        await notificationService.sendMentionNotification(
                             mentionedUser.id,
                             authorUser.id,
                             authorUser.firstName || authorUser.username,
@@ -276,7 +276,7 @@ export const addTaskComment = async (req, res) => {
 
         // Send notifications to all relevant users
         if (usersToNotify.size > 0) {
-            await notificationHandler.sendCommentNotification(
+            await notificationService.sendCommentNotification(
                 taskId,
                 task.title,
                 comment.id,

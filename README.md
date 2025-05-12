@@ -44,6 +44,17 @@ TaskGid API is a task management application built with Node.js, Express, and Po
 
    # Client URL
    CLIENT_URL=http://localhost:3000
+
+   # Notification Providers
+   PUSHER_APP_ID=your_app_id
+   PUSHER_KEY=your_key
+   PUSHER_SECRET=your_secret
+   PUSHER_CLUSTER=your_cluster
+   FIREBASE_PROJECT_ID=your_project_id
+   FIREBASE_CLIENT_EMAIL=your_client_email
+   FIREBASE_PRIVATE_KEY=your_private_key
+   KNOCK_API_KEY=your_knock_api_key
+   NOTIFICATION_PROVIDER=pusher
    ```
 
 4. Create the database:
@@ -97,6 +108,45 @@ API documentation is available in OpenAPI format. You can view it in the followi
 
 1. See the [openapi.yaml](openapi.yaml) file for the OpenAPI specification
 2. When the server is running, visit `/api-docs` for an interactive documentation interface
+
+## Notification Providers
+
+TaskGid supports multiple notification providers, with one provider active at a time:
+
+### Pusher
+For real-time notifications, configure your Pusher credentials in your .env file:
+```
+PUSHER_APP_ID=your_app_id
+PUSHER_KEY=your_key
+PUSHER_SECRET=your_secret
+PUSHER_CLUSTER=your_cluster
+```
+
+### Firebase Cloud Messaging (FCM)
+For mobile push notifications, configure your Firebase credentials in your .env file:
+```
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_CLIENT_EMAIL=your_client_email
+FIREBASE_PRIVATE_KEY=your_private_key
+```
+
+### Knock Labs
+For multi-channel notification orchestration, configure your Knock credentials in your .env file:
+```
+KNOCK_API_KEY=your_knock_api_key
+```
+
+To use Knock Labs:
+1. Create an account at [knock.app](https://knock.app)
+2. Set up workflows in the Knock dashboard for each event type
+3. Configure your .env file with your Knock API key
+4. Set the `NOTIFICATION_PROVIDER` to `knock` to use Knock as the provider
+
+You can set the active notification provider in your .env file:
+```
+# Options: pusher, firebase, knock
+NOTIFICATION_PROVIDER=pusher
+```
 
 ## License
 
