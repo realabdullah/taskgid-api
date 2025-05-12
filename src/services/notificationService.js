@@ -14,8 +14,8 @@ import Notification from '../models/Notification.js';
  */
 class NotificationService {
     /**
-     * Creates a new NotificationService instance
-     */
+   * Creates a new NotificationService instance
+   */
     constructor() {
         this.pusher = null;
         this.firebaseApp = null;
@@ -25,13 +25,16 @@ class NotificationService {
     }
 
     /**
-     * Initialize notification services
-     */
+   * Initialize notification services
+   */
     initialize() {
-        // Initialize Pusher if configured
         if (this.provider === 'pusher') {
-            if (!process.env.PUSHER_APP_ID || !process.env.PUSHER_KEY ||
-                !process.env.PUSHER_SECRET || !process.env.PUSHER_CLUSTER) {
+            if (
+                !process.env.PUSHER_APP_ID ||
+        !process.env.PUSHER_KEY ||
+        !process.env.PUSHER_SECRET ||
+        !process.env.PUSHER_CLUSTER
+            ) {
                 console.warn('Pusher configuration is incomplete');
             } else {
                 try {
@@ -48,10 +51,12 @@ class NotificationService {
             }
         }
 
-        // Initialize Firebase if configured
         if (this.provider === 'firebase') {
-            if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL ||
-                !process.env.FIREBASE_PRIVATE_KEY) {
+            if (
+                !process.env.FIREBASE_PROJECT_ID ||
+        !process.env.FIREBASE_CLIENT_EMAIL ||
+        !process.env.FIREBASE_PRIVATE_KEY
+            ) {
                 console.warn('Firebase configuration is incomplete');
             } else {
                 try {
@@ -60,7 +65,10 @@ class NotificationService {
                             credential: admin.credential.cert({
                                 projectId: process.env.FIREBASE_PROJECT_ID,
                                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                                privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                                privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(
+                                    /\\n/g,
+                                    '\n',
+                                ),
                             }),
                         });
                     } else {
@@ -72,7 +80,6 @@ class NotificationService {
             }
         }
 
-        // Initialize Knock if configured
         if (this.provider === 'knock') {
             if (!process.env.KNOCK_API_KEY) {
                 console.warn('Knock configuration is incomplete');
@@ -89,44 +96,170 @@ class NotificationService {
     }
 
     /**
-     * Store notification in database
-     * @param {string} userId - The ID of the user to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     * @return {Promise<object>} The stored notification
-     */
-    async storeNotification(userId, event, data) {
+   * Maps API notification types to database enum values
+   * @param {string} type - The notification type from constants
+   * @return {string} The mapped database enum value
+   */
+    mapNotificationTypeToEnum(type) {
+        const typeMap = {
+            [NOTIFICATION_TYPES.TASK_ASSIGNED]: 'task_assigned',
+            [NOTIFICATION_TYPES.TASK_UPDATED]: 'task_updated',
+            [NOTIFICATION_TYPES.TASK_DELETED]: 'task_deleted',
+            [NOTIFICATION_TYPES.TASK_COMPLETED]: 'task_completed',
+            [NOTIFICATION_TYPES.TASK_COMMENTED]: 'comment_reply',
+            [NOTIFICATION_TYPES.COMMENT_CREATED]: 'comment_reply',
+            [NOTIFICATION_TYPES.COMMENT_UPDATED]: 'comment_reply',
+            [NOTIFICATION_TYPES.COMMENT_DELETED]: 'comment_reply',
+            [NOTIFICATION_TYPES.COMMENT_LIKED]: 'comment_like',
+            [NOTIFICATION_TYPES.USER_MENTIONED]: 'mention',
+            [NOTIFICATION_TYPES.TASK_MENTIONED]: 'mention',
+            [NOTIFICATION_TYPES.COMMENT_MENTIONED]: 'mention',
+            [NOTIFICATION_TYPES.WORKSPACE_INVITE]: 'workspace_invite',
+            [NOTIFICATION_TYPES.WORKSPACE_ROLE_CHANGED]: 'workspace_role_changed',
+        };
+
+        return typeMap[type] || 'task_updated';
+    }
+
+    /**
+   * Store notification in database
+   * @param {string} userId - The ID of the user to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @param {object} [transaction=null] - Optional Sequelize transaction
+   * @return {Promise<object>} The stored notification
+   */
+    async storeNotification(userId, event, data, transaction = null) {
         try {
-            // Validate notification data
             validateNotificationData(event, data);
 
-            const notification = await Notification.create({
-                userId,
-                type: event,
-                data,
-                read: false,
-            });
+            const message =
+                data.message ||
+                this.generateDefaultMessage(event, data) ||
+                `New notification (${event})`;
 
+            const dbType = this.mapNotificationTypeToEnum(event);
+
+            const notificationData = {
+                userId,
+                type: dbType,
+                read: false,
+                message,
+            };
+
+            if (data.taskId && this.isValidUUID(data.taskId)) {
+                notificationData.taskId = data.taskId;
+            }
+
+            if (data.commentId && this.isValidUUID(data.commentId)) {
+                notificationData.commentId = data.commentId;
+            }
+
+            const actorId =
+                data.assignerId ||
+                data.updaterId ||
+                data.commenterId ||
+                data.mentionerId ||
+                data.inviterId ||
+                data.actorId;
+
+            if (actorId && this.isValidUUID(actorId)) {
+                notificationData.actorId = actorId;
+            }
+
+            const notification = await Notification.create(notificationData, {transaction});
             return notification;
         } catch (error) {
             console.error('Error storing notification:', error);
-            throw error;
+            if (error.name === 'SequelizeForeignKeyConstraintError') {
+                console.error(`Foreign key error details:`, {
+                    constraint: error.index,
+                    table: error.table,
+                    userId,
+                    event,
+                    dataIds: {
+                        taskId: data.taskId,
+                        commentId: data.commentId,
+                        actorId:
+                            data.assignerId ||
+                            data.updaterId ||
+                            data.commenterId ||
+                            data.mentionerId ||
+                            data.inviterId ||
+                            data.actorId,
+                    },
+                });
+            }
+
+            return null;
         }
     }
 
     /**
-     * Send a notification to a specific user
-     * @param {string} userId - The ID of the user to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     * @param {object} options - Additional options for notifications
-     */
+   * Check if a UUID string is valid
+   * @param {string} uuid - The UUID string to validate
+   * @return {boolean} Whether the UUID is valid
+   */
+    isValidUUID(uuid) {
+        if (!uuid) return false;
+        const regex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return regex.test(uuid);
+    }
+
+    /**
+   * Generate a default message for a notification when one isn't provided
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @return {string} Generated message
+   */
+    generateDefaultMessage(event, data) {
+        try {
+            switch (event) {
+            case NOTIFICATION_TYPES.TASK_ASSIGNED:
+                return data.assignerName && data.taskTitle ?
+                    `${data.assignerName} assigned you a task: ${data.taskTitle}` :
+                    'You were assigned a new task';
+            case NOTIFICATION_TYPES.TASK_UPDATED:
+                return data.updaterName && data.taskTitle ?
+                    `${data.updaterName} updated task: ${data.taskTitle}` :
+                    'A task was updated';
+            case NOTIFICATION_TYPES.TASK_COMPLETED:
+                return data.taskTitle ?
+                    `Task completed: ${data.taskTitle}` :
+                    'A task was completed';
+            case NOTIFICATION_TYPES.COMMENT_CREATED:
+                return data.commenterName && data.taskTitle ?
+                    `${data.commenterName} commented on: ${data.taskTitle}` :
+                    'New comment on a task';
+            case NOTIFICATION_TYPES.USER_MENTIONED:
+                return data.mentionerName && data.contextType ?
+                    `${data.mentionerName} mentioned you in a ${data.contextType}` :
+                    'You were mentioned';
+            case NOTIFICATION_TYPES.WORKSPACE_INVITE:
+                return data.inviterName && data.workspaceName ?
+                    `${data.inviterName} invited you to workspace: ${data.workspaceName}` :
+                    'You were invited to a workspace';
+            default:
+                return `New notification (${event})`;
+            }
+        } catch (error) {
+            console.error('Error generating notification message:', error);
+            return `New notification (${event})`;
+        }
+    }
+
+    /**
+   * Send a notification to a specific user
+   * @param {string} userId - The ID of the user to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @param {object} options - Additional options for notifications
+   */
     async sendNotification(userId, event, data, options = {}) {
         try {
-            // Store notification in database
-            await this.storeNotification(userId, event, data);
+            await this.storeNotification(userId, event, data, options.transaction);
 
-            // Attempt to send realtime notification with the configured provider
             switch (this.provider) {
             case 'pusher':
                 if (this.pusher) {
@@ -158,16 +291,15 @@ class NotificationService {
             }
         } catch (error) {
             console.error('Notification sending failed:', error);
-            // Don't rethrow - we don't want a notification failure to break application flow
         }
     }
 
     /**
-     * Send notification via Pusher
-     * @param {string} userId - The ID of the user to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     */
+   * Send notification via Pusher
+   * @param {string} userId - The ID of the user to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   */
     async sendPusherNotification(userId, event, data) {
         if (!this.pusher) {
             throw new Error('Pusher is not configured');
@@ -181,12 +313,12 @@ class NotificationService {
     }
 
     /**
-     * Send notification via Firebase
-     * @param {string} userId - The ID of the user to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     * @param {object} options - Additional Firebase notification options
-     */
+   * Send notification via Firebase
+   * @param {string} userId - The ID of the user to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @param {object} options - Additional Firebase notification options
+   */
     async sendFirebaseNotification(userId, event, data, options = {}) {
         if (!this.firebaseApp) {
             throw new Error('Firebase is not configured');
@@ -219,11 +351,11 @@ class NotificationService {
     }
 
     /**
-     * Send notification via Knock
-     * @param {string} userId - The ID of the user to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     */
+   * Send notification via Knock
+   * @param {string} userId - The ID of the user to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   */
     async sendKnockNotification(userId, event, data) {
         if (!this.knockClient) {
             throw new Error('Knock is not configured');
@@ -234,25 +366,23 @@ class NotificationService {
             throw new Error(`User ${userId} not found`);
         }
 
-        // First ensure user exists in Knock
         await this.knockClient.users.identify(userId, {
             email: user.email,
-            name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username,
-            // Include optional properties that can be used in the notification templates
+            name:
+        `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+        user.username,
             properties: {
                 username: user.username,
                 profilePicture: user.profilePicture,
             },
         });
 
-        // Map TaskGid event to Knock workflow
         const workflowKey = this.mapEventToKnockWorkflow(event);
         if (!workflowKey) {
             console.warn(`No Knock workflow mapped for event ${event}`);
             return;
         }
 
-        // Trigger the workflow
         await this.knockClient.workflows.trigger(workflowKey, {
             recipients: [userId],
             data: {
@@ -264,12 +394,12 @@ class NotificationService {
     }
 
     /**
-     * Map TaskGid event type to Knock workflow key
-     * @param {string} eventType - The TaskGid event type
-     * @return {string|null} The corresponding Knock workflow key or null if no mapping
-     */
+   * Map TaskGid event type to Knock workflow key
+   * @param {string} eventType - The TaskGid event type
+   * @return {string|null} The corresponding Knock workflow key or null if no mapping
+   */
     mapEventToKnockWorkflow(eventType) {
-        // This mapping should be configured based on your Knock workflows
+    // This mapping should be configured based on your Knock workflows
         const mappings = {
             [NOTIFICATION_TYPES.TASK_ASSIGNED]: 'task-assigned',
             [NOTIFICATION_TYPES.TASK_UPDATED]: 'task-updated',
@@ -293,39 +423,50 @@ class NotificationService {
     }
 
     /**
-     * Send notification to multiple users
-     * @param {string[]} userIds - Array of user IDs to notify
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     * @param {object} options - Additional options for notifications
-     */
+   * Send notification to multiple users
+   * @param {string[]} userIds - Array of user IDs to notify
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @param {object} options - Additional options for notifications
+   */
     async sendBulkNotification(userIds, event, data, options = {}) {
         try {
-            const notifications = userIds.map((userId) =>
-                this.sendNotification(userId, event, data, options),
+            const validUserIds = userIds.filter((id) => this.isValidUUID(id));
+
+            const notificationPromises = validUserIds.map((userId) =>
+                this.sendNotification(userId, event, data, options).catch((error) => {
+                    console.error(
+                        `Failed to send notification to user ${userId}:`,
+                        error,
+                    );
+                    return null;
+                }),
             );
-            await Promise.all(notifications);
+
+            await Promise.all(notificationPromises);
         } catch (error) {
             console.error('Bulk notification sending failed:', error);
         }
     }
 
     /**
-     * Send notification to all users in a workspace
-     * @param {string} workspaceId - The workspace ID
-     * @param {string} event - The event type
-     * @param {object} data - The notification data
-     * @param {object} options - Additional options for notifications
-     */
+   * Send notification to all users in a workspace
+   * @param {string} workspaceId - The workspace ID
+   * @param {string} event - The event type
+   * @param {object} data - The notification data
+   * @param {object} options - Additional options for notifications
+   */
     async sendWorkspaceNotification(workspaceId, event, data, options = {}) {
         try {
             const workspaceUsers = await User.findAll({
-                include: [{
-                    model: Workspace,
-                    as: 'workspaces',
-                    where: {id: workspaceId},
-                    attributes: [],
-                }],
+                include: [
+                    {
+                        model: Workspace,
+                        as: 'workspaces',
+                        where: {id: workspaceId},
+                        attributes: [],
+                    },
+                ],
                 attributes: ['id'],
             });
 
@@ -337,172 +478,19 @@ class NotificationService {
     }
 
     /**
-     * Store Knock token for a user
-     * @param {string} userId - The ID of the user
-     * @param {string} knockToken - The Knock token for the user
-     */
+   * Store Knock token for a user
+   * @param {string} userId - The ID of the user
+   * @param {string} knockToken - The Knock token for the user
+   */
     async storeKnockToken(userId, knockToken) {
         try {
-            await User.update(
-                {knockToken},
-                {where: {id: userId}},
-            );
+            await User.update({knockToken}, {where: {id: userId}});
             return true;
         } catch (error) {
             console.error('Store Knock token failed:', error);
             return false;
         }
     }
-
-    // Helper methods for backward compatibility
-
-    /**
-     * Send a task assignment notification
-     * @param {string} taskId - The task ID
-     * @param {string} taskTitle - The task title
-     * @param {string} assignerId - The ID of the user assigning the task
-     * @param {string} assignerName - The name of the user assigning the task
-     * @param {string[]} assigneeIds - Array of user IDs being assigned
-     */
-    async sendTaskAssignmentNotification(taskId, taskTitle, assignerId, assignerName, assigneeIds) {
-        const data = {
-            taskId,
-            taskTitle,
-            assignerId,
-            assignerName,
-        };
-
-        const validation = validateNotificationData(NOTIFICATION_TYPES.TASK_ASSIGNED, data);
-        if (!validation.isValid) {
-            console.error('Invalid notification data:', validation.errors);
-            return;
-        }
-
-        await this.sendBulkNotification(
-            assigneeIds,
-            NOTIFICATION_TYPES.TASK_ASSIGNED,
-            validation.data,
-        );
-    }
-
-    /**
-     * Send a task update notification
-     * @param {string} taskId - The task ID
-     * @param {string} taskTitle - The task title
-     * @param {string} updaterId - The ID of the user updating the task
-     * @param {string} updaterName - The name of the user updating the task
-     * @param {string[]} notifyUserIds - Array of user IDs to notify
-     */
-    async sendTaskUpdateNotification(taskId, taskTitle, updaterId, updaterName, notifyUserIds) {
-        const data = {
-            taskId,
-            taskTitle,
-            updaterId,
-            updaterName,
-        };
-
-        const validation = validateNotificationData(NOTIFICATION_TYPES.TASK_UPDATED, data);
-        if (!validation.isValid) {
-            console.error('Invalid notification data:', validation.errors);
-            return;
-        }
-
-        await this.sendBulkNotification(
-            notifyUserIds,
-            NOTIFICATION_TYPES.TASK_UPDATED,
-            validation.data,
-        );
-    }
-
-    /**
-     * Send a comment notification
-     * @param {string} taskId - The task ID
-     * @param {string} taskTitle - The task title
-     * @param {string} commentId - The comment ID
-     * @param {string} commenterId - The ID of the user commenting
-     * @param {string} commenterName - The name of the user commenting
-     * @param {string[]} notifyUserIds - Array of user IDs to notify
-     */
-    async sendCommentNotification(taskId, taskTitle, commentId, commenterId, commenterName, notifyUserIds) {
-        const data = {
-            taskId,
-            taskTitle,
-            commentId,
-            commenterId,
-            commenterName,
-        };
-
-        const validation = validateNotificationData(NOTIFICATION_TYPES.COMMENT_CREATED, data);
-        if (!validation.isValid) {
-            console.error('Invalid notification data:', validation.errors);
-            return;
-        }
-
-        await this.sendBulkNotification(
-            notifyUserIds,
-            NOTIFICATION_TYPES.COMMENT_CREATED,
-            validation.data,
-        );
-    }
-
-    /**
-     * Send a workspace invite notification
-     * @param {string} workspaceId - The workspace ID
-     * @param {string} workspaceName - The workspace name
-     * @param {string} inviterId - The ID of the user sending the invite
-     * @param {string} inviterName - The name of the user sending the invite
-     * @param {string} inviteeId - The ID of the user being invited
-     */
-    async sendWorkspaceInviteNotification(workspaceId, workspaceName, inviterId, inviterName, inviteeId) {
-        const data = {
-            workspaceId,
-            workspaceName,
-            inviterId,
-            inviterName,
-        };
-
-        const validation = validateNotificationData(NOTIFICATION_TYPES.WORKSPACE_INVITE, data);
-        if (!validation.isValid) {
-            console.error('Invalid notification data:', validation.errors);
-            return;
-        }
-
-        await this.sendNotification(
-            inviteeId,
-            NOTIFICATION_TYPES.WORKSPACE_INVITE,
-            validation.data,
-        );
-    }
-
-    /**
-     * Send a mention notification
-     * @param {string} mentionedUserId - The ID of the user being mentioned
-     * @param {string} mentionerId - The ID of the user mentioning
-     * @param {string} mentionerName - The name of the user mentioning
-     * @param {string} contextId - The ID of the context (task/comment)
-     * @param {string} contextType - The type of context ('task' or 'comment')
-     */
-    async sendMentionNotification(mentionedUserId, mentionerId, mentionerName, contextId, contextType) {
-        const data = {
-            mentionerId,
-            mentionerName,
-            contextId,
-            contextType,
-        };
-
-        const validation = validateNotificationData(NOTIFICATION_TYPES.USER_MENTIONED, data);
-        if (!validation.isValid) {
-            console.error('Invalid notification data:', validation.errors);
-            return;
-        }
-
-        await this.sendNotification(
-            mentionedUserId,
-            NOTIFICATION_TYPES.USER_MENTIONED,
-            validation.data,
-        );
-    }
 }
 
-// Export singleton instance
 export default new NotificationService();

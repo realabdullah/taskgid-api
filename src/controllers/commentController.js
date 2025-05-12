@@ -12,6 +12,7 @@ import {
 import {Op} from 'sequelize';
 import 'dotenv/config';
 import CommentLike from '../models/CommentLike.js';
+import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 
 const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
     if (!usernames || usernames.length === 0) {
@@ -40,6 +41,7 @@ const updateMentionsInComment = async (
     commentInstance,
     authorUser,
     taskIdForContext,
+    transaction,
 ) => {
     const mentionRegex = /@(\w+)/g;
     const content = commentInstance.content || '';
@@ -75,12 +77,18 @@ const updateMentionsInComment = async (
                 // Send notifications to mentioned users
                 for (const mentionedUser of mentionedUsers) {
                     if (mentionedUser.id !== authorUser.id) {
-                        await notificationService.sendMentionNotification(
+                        await notificationService.sendNotification(
                             mentionedUser.id,
-                            authorUser.id,
-                            authorUser.firstName || authorUser.username,
-                            commentInstance.id,
-                            'comment',
+                            NOTIFICATION_TYPES.USER_MENTIONED,
+                            {
+                                mentionerId: authorUser.id,
+                                mentionerName: authorUser.firstName || authorUser.username,
+                                contextId: commentInstance.id,
+                                contextType: 'comment',
+                                taskId: task.id,
+                                taskTitle: task.title,
+                            },
+                            {transaction},
                         );
                     }
                 }
@@ -180,7 +188,7 @@ export const getCommentReplies = async (req, res) => {
 export const addTaskComment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const {taskId} = req.params;
+        const {id: taskId} = req.params;
         const {content, parentId} = req.body;
         const userId = req.user.id;
 
@@ -225,7 +233,7 @@ export const addTaskComment = async (req, res) => {
             await parentComment.increment('replyCount', {transaction: t});
         }
 
-        comment = await updateMentionsInComment(comment, req.user, taskId);
+        comment = await updateMentionsInComment(comment, req.user, taskId, t);
 
         const populatedComment = await Comment.findByPk(comment.id, {
             include: [
@@ -276,13 +284,18 @@ export const addTaskComment = async (req, res) => {
 
         // Send notifications to all relevant users
         if (usersToNotify.size > 0) {
-            await notificationService.sendCommentNotification(
-                taskId,
-                task.title,
-                comment.id,
-                userId,
-                req.user.firstName || req.user.username,
+            console.log('Sending comment notification to users:', Array.from(usersToNotify));
+            await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
+                NOTIFICATION_TYPES.COMMENT_CREATED,
+                {
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    commentId: populatedComment.id,
+                    commenterId: userId,
+                    commenterName: req.user.firstName || req.user.username,
+                },
+                {transaction: t},
             );
         }
 
@@ -346,6 +359,7 @@ export const updateComment = async (req, res) => {
             comment,
             req.user,
             comment.taskId,
+            t,
         );
 
         const populatedComment = await Comment.findByPk(

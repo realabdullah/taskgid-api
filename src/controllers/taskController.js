@@ -162,12 +162,15 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'status_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationService.sendTaskUpdateNotification(
-                task.id,
-                task.title,
-                req.user.id,
-                req.user.firstName || req.user.username,
+            await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
+                NOTIFICATION_TYPES.TASK_UPDATED,
+                {
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    updaterId: req.user.id,
+                    updaterName: req.user.firstName || req.user.username,
+                },
             );
         }
 
@@ -180,12 +183,15 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'priority_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationService.sendTaskUpdateNotification(
-                task.id,
-                task.title,
-                req.user.id,
-                req.user.firstName || req.user.username,
+            await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
+                NOTIFICATION_TYPES.TASK_UPDATED,
+                {
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    updaterId: req.user.id,
+                    updaterName: req.user.firstName || req.user.username,
+                },
             );
         }
 
@@ -201,12 +207,15 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'updated', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationService.sendTaskUpdateNotification(
-                task.id,
-                task.title,
-                req.user.id,
-                req.user.firstName || req.user.username,
+            await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
+                NOTIFICATION_TYPES.TASK_UPDATED,
+                {
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    updaterId: req.user.id,
+                    updaterName: req.user.firstName || req.user.username,
+                },
             );
         }
 
