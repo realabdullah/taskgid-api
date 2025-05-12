@@ -153,6 +153,8 @@ class NotificationService {
 
             if (data.commentId && this.isValidUUID(data.commentId)) {
                 notificationData.commentId = data.commentId;
+            } else if (data.contextType === 'comment' && data.contextId && this.isValidUUID(data.contextId)) {
+                notificationData.commentId = data.contextId;
             }
 
             const actorId =
