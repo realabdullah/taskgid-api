@@ -3,7 +3,6 @@ import admin from 'firebase-admin';
 import 'dotenv/config';
 import Knock from '@knocklabs/node';
 import User from '../models/User.js';
-import {Workspace} from '../models/Workspace.js';
 import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 import {validateNotificationData} from '../utils/notificationValidator.js';
 import Notification from '../models/Notification.js';
@@ -448,49 +447,6 @@ class NotificationService {
             await Promise.all(notificationPromises);
         } catch (error) {
             console.error('Bulk notification sending failed:', error);
-        }
-    }
-
-    /**
-   * Send notification to all users in a workspace
-   * @param {string} workspaceId - The workspace ID
-   * @param {string} event - The event type
-   * @param {object} data - The notification data
-   * @param {object} options - Additional options for notifications
-   */
-    async sendWorkspaceNotification(workspaceId, event, data, options = {}) {
-        try {
-            const workspaceUsers = await User.findAll({
-                include: [
-                    {
-                        model: Workspace,
-                        as: 'workspaces',
-                        where: {id: workspaceId},
-                        attributes: [],
-                    },
-                ],
-                attributes: ['id'],
-            });
-
-            const userIds = workspaceUsers.map((user) => user.id);
-            await this.sendBulkNotification(userIds, event, data, options);
-        } catch (error) {
-            console.error('Workspace notification sending failed:', error);
-        }
-    }
-
-    /**
-   * Store Knock token for a user
-   * @param {string} userId - The ID of the user
-   * @param {string} knockToken - The Knock token for the user
-   */
-    async storeKnockToken(userId, knockToken) {
-        try {
-            await User.update({knockToken}, {where: {id: userId}});
-            return true;
-        } catch (error) {
-            console.error('Store Knock token failed:', error);
-            return false;
         }
     }
 }

@@ -3,7 +3,6 @@ import {Workspace} from '../models/Workspace.js';
 import User from '../models/User.js';
 import Invite from '../models/Invite.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
-import {acceptInviteNotification} from '../services/pusher.js';
 import emailService from '../utils/emailService.js';
 import 'dotenv/config';
 import {generateUsername} from '../utils/usernameGenerator.js';
@@ -145,7 +144,7 @@ const inviteUser = async (req, res) => {
         }
 
         await logWorkspaceActivity(
-            workspaceId,
+            workspace.id,
             inviterUser.id,
             'member_invited',
             activityDetails,
@@ -202,6 +201,7 @@ const acceptInvite = async (req, res) => {
         const {email, workspaceId} = decoded;
 
         const workspace = await Workspace.findByPk(workspaceId, {
+            attributes: ['id', 'name', 'userId'],
             include: [{model: User, as: 'user', attributes: ['id', 'firstName']}],
         });
         if (!workspace) {
@@ -278,8 +278,26 @@ const acceptInvite = async (req, res) => {
             );
         }
 
-        if (workspace.user) {
-            acceptInviteNotification(workspace.user.id, workspace, user);
+        if (workspace.userId) {
+            const joinedUserName =
+                `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+                user.username ||
+                user.email;
+            await notificationService.sendNotification(
+                workspace.userId,
+                NOTIFICATION_TYPES.WORKSPACE_JOINED,
+                {
+                    workspaceId: workspace.id,
+                    workspaceName: workspace.name,
+                    userId: user.id,
+                    userName: joinedUserName,
+                },
+            );
+        } else {
+            console.warn(
+                `Workspace creator ID not found for workspace ${workspace.id}, ` +
+                `cannot send join notification.`,
+            );
         }
 
         return successResponse(res, {

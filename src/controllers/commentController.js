@@ -74,7 +74,6 @@ const updateMentionsInComment = async (
                 );
                 mentionedUserIds = mentionedUsers.map((user) => user.id);
 
-                // Send notifications to mentioned users
                 for (const mentionedUser of mentionedUsers) {
                     if (mentionedUser.id !== authorUser.id) {
                         await notificationService.sendNotification(
@@ -252,7 +251,6 @@ export const addTaskComment = async (req, res) => {
             transaction: t,
         });
 
-        // Get task details for notification
         const task = await Task.findByPk(taskId, {
             include: [
                 {
@@ -269,7 +267,6 @@ export const addTaskComment = async (req, res) => {
             transaction: t,
         });
 
-        // Get users to notify (assignees, creator, and parent comment author if it's a reply)
         const usersToNotify = new Set([
             ...task.assignees.map((a) => a.id),
             task.createdById,
@@ -279,12 +276,9 @@ export const addTaskComment = async (req, res) => {
             usersToNotify.add(parentComment.userId);
         }
 
-        // Remove the comment author from the notification list
         usersToNotify.delete(userId);
 
-        // Send notifications to all relevant users
         if (usersToNotify.size > 0) {
-            console.log('Sending comment notification to users:', Array.from(usersToNotify));
             await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
                 NOTIFICATION_TYPES.COMMENT_CREATED,
@@ -459,7 +453,6 @@ export const likeComment = async (req, res) => {
             return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
         }
 
-        // Check if user has already liked the comment
         const existingLike = await CommentLike.findOne({
             where: {
                 commentId,
@@ -473,7 +466,6 @@ export const likeComment = async (req, res) => {
             return res.status(400).json({success: false, error: 'You have already liked this comment'});
         }
 
-        // Create the like and increment the like count atomically
         await Promise.all([
             CommentLike.create({
                 commentId,
@@ -509,7 +501,6 @@ export const unlikeComment = async (req, res) => {
             return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
         }
 
-        // Check if user has liked the comment
         const existingLike = await CommentLike.findOne({
             where: {
                 commentId,
@@ -523,7 +514,6 @@ export const unlikeComment = async (req, res) => {
             return res.status(400).json({success: false, error: 'You have not liked this comment'});
         }
 
-        // Delete the like and decrement the like count atomically
         await Promise.all([
             existingLike.destroy({transaction: t}),
             comment.decrement('likeCount', {transaction: t}),

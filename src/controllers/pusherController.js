@@ -1,7 +1,6 @@
 import Pusher from 'pusher';
 import 'dotenv/config';
 
-// Initialize Pusher instance
 const pusher = new Pusher({
     appId: process.env.PUSHER_APP_ID,
     key: process.env.PUSHER_KEY,
@@ -27,11 +26,9 @@ export const authenticatePusher = (req, res) => {
             });
         }
 
-        // Check if this is a user-specific channel
         if (channelName.startsWith('private-user-')) {
             const channelUserId = channelName.replace('private-user-', '');
 
-            // Verify the user is requesting their own channel
             if (channelUserId !== req.user.id) {
                 return res.status(403).json({
                     success: false,
@@ -40,7 +37,6 @@ export const authenticatePusher = (req, res) => {
             }
         }
 
-        // Generate auth signature
         const auth = pusher.authorizeChannel(socketId, channelName);
         return res.status(200).json(auth);
     } catch (error) {
