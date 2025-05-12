@@ -5,7 +5,7 @@ import {Workspace} from '../models/Workspace.js';
 import TaskAssignee from '../models/TaskAssignee.js';
 import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
-import {notificationHandler} from '../services/notificationService.js';
+import notificationService from '../services/notificationService.js';
 import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 import {Op} from 'sequelize';
@@ -74,7 +74,7 @@ export const addTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'assigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
 
-            await notificationHandler.sendTaskAssignmentNotification(
+            await notificationService.sendTaskAssignmentNotification(
                 task.id,
                 task.title,
                 req.user.id,
@@ -162,7 +162,7 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'status_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationHandler.sendTaskUpdateNotification(
+            await notificationService.sendTaskUpdateNotification(
                 task.id,
                 task.title,
                 req.user.id,
@@ -180,7 +180,7 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'priority_changed', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationHandler.sendTaskUpdateNotification(
+            await notificationService.sendTaskUpdateNotification(
                 task.id,
                 task.title,
                 req.user.id,
@@ -201,7 +201,7 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'updated', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_updated', meta);
 
-            await notificationHandler.sendTaskUpdateNotification(
+            await notificationService.sendTaskUpdateNotification(
                 task.id,
                 task.title,
                 req.user.id,
@@ -228,7 +228,7 @@ export const updateTask = async (req, res) => {
             await logTaskActivity(task.id, req.user.id, 'assigned', meta);
             await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
 
-            await notificationHandler.sendTaskAssignmentNotification(
+            await notificationService.sendTaskAssignmentNotification(
                 task.id,
                 task.title,
                 req.user.id,

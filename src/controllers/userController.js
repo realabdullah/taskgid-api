@@ -352,3 +352,24 @@ export const updateFCMToken = async (req, res) => {
         return errorResponse(res, 500, 'Failed to update FCM token');
     }
 };
+
+export const updateKnockToken = async (req, res) => {
+    try {
+        const {knockToken} = req.body;
+        const userId = req.user.id;
+
+        if (!knockToken) {
+            return errorResponse(res, 400, 'Knock token is required');
+        }
+
+        await User.update(
+            {knockToken},
+            {where: {id: userId}},
+        );
+
+        return successResponse(res, 200, 'Knock token updated successfully');
+    } catch (error) {
+        console.error('Update Knock Token Error:', error);
+        return errorResponse(res, 500, 'Failed to update Knock token');
+    }
+};

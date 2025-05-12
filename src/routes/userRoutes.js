@@ -5,7 +5,7 @@ import {
 } from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateUpdateUserProfile} from '../middleware/validationMiddleware.js';
-import {updateFCMToken} from '../controllers/userController.js';
+import {updateFCMToken, updateKnockToken} from '../controllers/userController.js';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
@@ -17,6 +17,7 @@ router.use(authMiddleware);
 router.get('/profile', getUser);
 router.patch('/profile', validateUpdateUserProfile, updateUserProfile);
 router.put('/fcm-token', updateFCMToken);
+router.put('/knock-token', updateKnockToken);
 
 // WebAuthn routes with rate limiting
 router.get('/authn/options', authLimiter, generateRegistrationOptionsWithAuthn);

@@ -309,6 +309,36 @@ All protected endpoints require a Bearer JWT token in the `Authorization` header
 
 ---
 
+## Notification Endpoints
+
+### Update FCM Token
+- **Endpoint**: `PUT /api/users/fcm-token`
+- **Authentication**: Required
+- **Request Body**:
+  ```json
+  {
+    "fcmToken": "user_fcm_token_for_push_notifications"
+  }
+  ```
+- **Success Response**: `200 OK`
+- **Error Response**: `400 Bad Request`, `401 Unauthorized`, `500 Internal Server Error`
+- **Description**: Updates the Firebase Cloud Messaging token for the authenticated user to enable push notifications.
+
+### Update Knock Token
+- **Endpoint**: `PUT /api/users/knock-token`
+- **Authentication**: Required
+- **Request Body**:
+  ```json
+  {
+    "knockToken": "user_knock_token_for_notifications"
+  }
+  ```
+- **Success Response**: `200 OK`
+- **Error Response**: `400 Bad Request`, `401 Unauthorized`, `500 Internal Server Error`
+- **Description**: Updates the Knock token for the authenticated user to enable notifications via Knock Labs.
+
+---
+
 ## Error Handling
 
 All error responses follow the `Error` schema, providing an error message and a `success: false` flag.
