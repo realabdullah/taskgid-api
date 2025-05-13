@@ -3,7 +3,6 @@ import {Workspace} from '../models/Workspace.js';
 import User from '../models/User.js';
 import Invite from '../models/Invite.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
-import {acceptInviteNotification} from '../services/pusher.js';
 import emailService from '../utils/emailService.js';
 import 'dotenv/config';
 import {generateUsername} from '../utils/usernameGenerator.js';
@@ -13,6 +12,7 @@ import {Op} from 'sequelize';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import notificationService from '../services/notificationService.js';
+import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 
 const updateActivityLogDetails = async (
     workspaceId,
@@ -129,18 +129,22 @@ const inviteUser = async (req, res) => {
                 existingUser.lastName || ''
             }`.trim();
 
-            await notificationService.sendWorkspaceInviteNotification(
-                workspace.id,
-                workspace.name,
-                inviterUser.id,
+            await notificationService.sendNotification(
                 existingUser.id,
+                NOTIFICATION_TYPES.WORKSPACE_INVITE,
+                {
+                    workspaceId: workspace.id,
+                    workspaceName: workspace.name,
+                    inviterId: inviterUser.id,
+                    inviterName: inviterUser.firstName || inviterUser.username,
+                },
             );
         } else {
             activityDetails.invitedName = null;
         }
 
         await logWorkspaceActivity(
-            workspaceId,
+            workspace.id,
             inviterUser.id,
             'member_invited',
             activityDetails,
@@ -197,6 +201,7 @@ const acceptInvite = async (req, res) => {
         const {email, workspaceId} = decoded;
 
         const workspace = await Workspace.findByPk(workspaceId, {
+            attributes: ['id', 'name', 'userId'],
             include: [{model: User, as: 'user', attributes: ['id', 'firstName']}],
         });
         if (!workspace) {
@@ -273,8 +278,26 @@ const acceptInvite = async (req, res) => {
             );
         }
 
-        if (workspace.user) {
-            acceptInviteNotification(workspace.user.id, workspace, user);
+        if (workspace.userId) {
+            const joinedUserName =
+                `${user.firstName || ''} ${user.lastName || ''}`.trim() ||
+                user.username ||
+                user.email;
+            await notificationService.sendNotification(
+                workspace.userId,
+                NOTIFICATION_TYPES.WORKSPACE_JOINED,
+                {
+                    workspaceId: workspace.id,
+                    workspaceName: workspace.name,
+                    userId: user.id,
+                    userName: joinedUserName,
+                },
+            );
+        } else {
+            console.warn(
+                `Workspace creator ID not found for workspace ${workspace.id}, ` +
+                `cannot send join notification.`,
+            );
         }
 
         return successResponse(res, {

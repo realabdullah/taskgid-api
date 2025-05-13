@@ -12,6 +12,7 @@ import {
 import {Op} from 'sequelize';
 import 'dotenv/config';
 import CommentLike from '../models/CommentLike.js';
+import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 
 const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
     if (!usernames || usernames.length === 0) {
@@ -40,6 +41,7 @@ const updateMentionsInComment = async (
     commentInstance,
     authorUser,
     taskIdForContext,
+    transaction,
 ) => {
     const mentionRegex = /@(\w+)/g;
     const content = commentInstance.content || '';
@@ -72,15 +74,20 @@ const updateMentionsInComment = async (
                 );
                 mentionedUserIds = mentionedUsers.map((user) => user.id);
 
-                // Send notifications to mentioned users
                 for (const mentionedUser of mentionedUsers) {
                     if (mentionedUser.id !== authorUser.id) {
-                        await notificationService.sendMentionNotification(
+                        await notificationService.sendNotification(
                             mentionedUser.id,
-                            authorUser.id,
-                            authorUser.firstName || authorUser.username,
-                            commentInstance.id,
-                            'comment',
+                            NOTIFICATION_TYPES.USER_MENTIONED,
+                            {
+                                mentionerId: authorUser.id,
+                                mentionerName: authorUser.firstName || authorUser.username,
+                                contextId: commentInstance.id,
+                                contextType: 'comment',
+                                taskId: task.id,
+                                taskTitle: task.title,
+                            },
+                            {transaction},
                         );
                     }
                 }
@@ -180,7 +187,7 @@ export const getCommentReplies = async (req, res) => {
 export const addTaskComment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const {taskId} = req.params;
+        const {id: taskId} = req.params;
         const {content, parentId} = req.body;
         const userId = req.user.id;
 
@@ -225,7 +232,7 @@ export const addTaskComment = async (req, res) => {
             await parentComment.increment('replyCount', {transaction: t});
         }
 
-        comment = await updateMentionsInComment(comment, req.user, taskId);
+        comment = await updateMentionsInComment(comment, req.user, taskId, t);
 
         const populatedComment = await Comment.findByPk(comment.id, {
             include: [
@@ -244,7 +251,6 @@ export const addTaskComment = async (req, res) => {
             transaction: t,
         });
 
-        // Get task details for notification
         const task = await Task.findByPk(taskId, {
             include: [
                 {
@@ -261,7 +267,6 @@ export const addTaskComment = async (req, res) => {
             transaction: t,
         });
 
-        // Get users to notify (assignees, creator, and parent comment author if it's a reply)
         const usersToNotify = new Set([
             ...task.assignees.map((a) => a.id),
             task.createdById,
@@ -271,18 +276,20 @@ export const addTaskComment = async (req, res) => {
             usersToNotify.add(parentComment.userId);
         }
 
-        // Remove the comment author from the notification list
         usersToNotify.delete(userId);
 
-        // Send notifications to all relevant users
         if (usersToNotify.size > 0) {
-            await notificationService.sendCommentNotification(
-                taskId,
-                task.title,
-                comment.id,
-                userId,
-                req.user.firstName || req.user.username,
+            await notificationService.sendBulkNotification(
                 Array.from(usersToNotify),
+                NOTIFICATION_TYPES.COMMENT_CREATED,
+                {
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    commentId: populatedComment.id,
+                    commenterId: userId,
+                    commenterName: req.user.firstName || req.user.username,
+                },
+                {transaction: t},
             );
         }
 
@@ -346,6 +353,7 @@ export const updateComment = async (req, res) => {
             comment,
             req.user,
             comment.taskId,
+            t,
         );
 
         const populatedComment = await Comment.findByPk(
@@ -445,7 +453,6 @@ export const likeComment = async (req, res) => {
             return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
         }
 
-        // Check if user has already liked the comment
         const existingLike = await CommentLike.findOne({
             where: {
                 commentId,
@@ -459,7 +466,6 @@ export const likeComment = async (req, res) => {
             return res.status(400).json({success: false, error: 'You have already liked this comment'});
         }
 
-        // Create the like and increment the like count atomically
         await Promise.all([
             CommentLike.create({
                 commentId,
@@ -495,7 +501,6 @@ export const unlikeComment = async (req, res) => {
             return res.status(403).json({success: false, error: 'Comment does not belong to the specified task'});
         }
 
-        // Check if user has liked the comment
         const existingLike = await CommentLike.findOne({
             where: {
                 commentId,
@@ -509,7 +514,6 @@ export const unlikeComment = async (req, res) => {
             return res.status(400).json({success: false, error: 'You have not liked this comment'});
         }
 
-        // Delete the like and decrement the like count atomically
         await Promise.all([
             existingLike.destroy({transaction: t}),
             comment.decrement('likeCount', {transaction: t}),
