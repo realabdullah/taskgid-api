@@ -125,7 +125,7 @@ export const getTaskComments = async (req, res) => {
             ],
             limit,
             offset,
-            order: [['createdAt', 'ASC']],
+            order: [['createdAt', 'DESC']],
         });
 
         const response = createPaginatedResponse(comments, count, page, limit);
@@ -171,7 +171,7 @@ export const getCommentReplies = async (req, res) => {
             ],
             limit,
             offset,
-            order: [['createdAt', 'ASC']],
+            order: [['createdAt', 'DESC']],
         });
 
         const response = createPaginatedResponse(replies, count, page, limit);
