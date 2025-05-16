@@ -1,6 +1,5 @@
 import express from 'express';
-import {inviteUser, acceptInvite} from '../controllers/inviteController.js';
-import {getPendingInvitations} from '../controllers/invitationController.js';
+import {inviteUser, acceptInvite, getPendingInvitations} from '../controllers/inviteController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateInviteInput} from '../middleware/validationMiddleware.js';
 
