@@ -11,6 +11,9 @@ import {
     promoteToAdmin,
     demoteFromAdmin,
     getWorkspaceActivities,
+    getComprehensiveTeamMembers,
+    getUserTasks,
+    getUserWorkspaceActivities,
 } from '../controllers/workspaceController.js';
 import {
     getWorkspaceStatistics,
@@ -34,8 +37,13 @@ router.get('/:slug/activities', getWorkspaceActivities);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', getWorkspaceTeam);
+router.get('/:slug/team/comprehensive', getComprehensiveTeamMembers);
 router.post('/:slug/team', addTeamMember);
 router.delete('/:slug/team/:userIdToRemove', removeTeamMember);
+
+// --- Member-specific data ---
+router.get('/:slug/members/:memberId/tasks', getUserTasks);
+router.get('/:slug/members/:memberId/activities', getUserWorkspaceActivities);
 
 // --- Admin Role Management (by Workspace Slug & User ID) ---
 router.post('/:slug/admins/:userId', promoteToAdmin);
