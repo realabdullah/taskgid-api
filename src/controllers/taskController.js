@@ -10,6 +10,7 @@ import 'dotenv/config';
 import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.js';
 import {Op} from 'sequelize';
 import TaskActivity from '../models/TaskActivity.js';
+import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 
 const getAssignee = async (assigneeUsername) => {
     if (!assigneeUsername) return null;
@@ -120,8 +121,8 @@ export const updateTask = async (req, res) => {
         const {workspaceSlug, id: taskId} = req.params;
         const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-        const {title, description, status, priority, dueDate, assignees} = req.body;
-        const newAssigneeIds = await getAssignees(assignees);
+        const updateData = req.body;
+        const newAssigneeIds = updateData.assignees ? await getAssignees(updateData.assignees) : undefined;
 
         const task = await Task.findOne({
             where: {
@@ -142,16 +143,18 @@ export const updateTask = async (req, res) => {
         const originalData = task.get({plain: true});
         const originalAssigneeIds = originalData.assignees.map((assignee) => assignee.id);
 
+        const allowedFields = ['title', 'description', 'status', 'priority', 'dueDate'];
         const updatePayload = {};
-        if (title !== undefined) updatePayload.title = title;
-        if (description !== undefined) updatePayload.description = description;
-        if (status !== undefined) updatePayload.status = status;
-        if (priority !== undefined) updatePayload.priority = priority;
-        if (dueDate !== undefined) updatePayload.dueDate = dueDate;
+
+        allowedFields.forEach((field) => {
+            if (updateData[field] !== undefined) {
+                updatePayload[field] = updateData[field];
+            }
+        });
 
         if (Object.keys(updatePayload).length > 0) await task.update(updatePayload);
 
-        const usersToNotify = new Set([...newAssigneeIds, task.createdById]);
+        const usersToNotify = new Set([...newAssigneeIds || [], task.createdById]);
 
         if (updatePayload.status !== undefined && originalData.status !== updatePayload.status) {
             const meta = {
@@ -219,31 +222,33 @@ export const updateTask = async (req, res) => {
             );
         }
 
-        const removedAssigneeIds = originalAssigneeIds.filter((id) => !newAssigneeIds.includes(id));
-        const addedAssigneeIds = newAssigneeIds.filter((id) => !originalAssigneeIds.includes(id));
+        if (newAssigneeIds !== undefined) {
+            const removedAssigneeIds = originalAssigneeIds.filter((id) => !newAssigneeIds.includes(id));
+            const addedAssigneeIds = newAssigneeIds.filter((id) => !originalAssigneeIds.includes(id));
 
-        if (removedAssigneeIds.length > 0) {
-            await TaskAssignee.destroy({where: {taskId: task.id, userId: {[Op.in]: removedAssigneeIds}}});
-            const meta = {taskId: task.id, taskTitle: task.title, removedAssigneeIds: removedAssigneeIds};
-            await logTaskActivity(task.id, req.user.id, 'unassigned', meta);
-            await logWorkspaceActivity(workspaceId, req.user.id, 'task_unassigned', meta);
-        }
+            if (removedAssigneeIds.length > 0) {
+                await TaskAssignee.destroy({where: {taskId: task.id, userId: {[Op.in]: removedAssigneeIds}}});
+                const meta = {taskId: task.id, taskTitle: task.title, removedAssigneeIds: removedAssigneeIds};
+                await logTaskActivity(task.id, req.user.id, 'unassigned', meta);
+                await logWorkspaceActivity(workspaceId, req.user.id, 'task_unassigned', meta);
+            }
 
-        if (addedAssigneeIds.length > 0) {
-            const newEntries = addedAssigneeIds.map((userId) => ({taskId: task.id, userId}));
-            await TaskAssignee.bulkCreate(newEntries);
+            if (addedAssigneeIds.length > 0) {
+                const newEntries = addedAssigneeIds.map((userId) => ({taskId: task.id, userId}));
+                await TaskAssignee.bulkCreate(newEntries);
 
-            const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: addedAssigneeIds};
-            await logTaskActivity(task.id, req.user.id, 'assigned', meta);
-            await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
+                const meta = {taskId: task.id, taskTitle: task.title, addedAssigneeIds: addedAssigneeIds};
+                await logTaskActivity(task.id, req.user.id, 'assigned', meta);
+                await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
 
-            await notificationService.sendTaskAssignmentNotification(
-                task.id,
-                task.title,
-                req.user.id,
-                req.user.firstName || req.user.username,
-                addedAssigneeIds,
-            );
+                await notificationService.sendTaskAssignmentNotification(
+                    task.id,
+                    task.title,
+                    req.user.id,
+                    req.user.firstName || req.user.username,
+                    addedAssigneeIds,
+                );
+            }
         }
 
         const updatedTask = await Task.findByPk(task.id, {
@@ -326,7 +331,6 @@ export const deleteTask = async (req, res) => {
 
 export const fetchWorkspaceTasks = async (req, res) => {
     try {
-        console.log('req: ', req.user);
         const {workspaceSlug} = req.params;
         const {page, limit, offset} = getPaginationParams(req.query);
 
