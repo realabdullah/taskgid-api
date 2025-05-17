@@ -20,6 +20,7 @@ import authMiddleware from '../middleware/authMiddleware.js';
 import {checkMemberMiddleware} from '../middleware/workspaceMiddleware.js';
 import {
     validateTaskInput,
+    validateTaskUpdateInput,
     validateCommentInput,
 } from '../middleware/validationMiddleware.js';
 
@@ -34,7 +35,7 @@ router.get('/:id', checkMemberMiddleware, fetchWorkspaceTask);
 router.get('/:id/activities', checkMemberMiddleware, getTaskActivities);
 
 router.post('/', checkMemberMiddleware, validateTaskInput, addTask);
-router.put('/:id', checkMemberMiddleware, validateTaskInput, updateTask);
+router.patch('/:id', checkMemberMiddleware, validateTaskUpdateInput, updateTask);
 router.delete('/:id', checkMemberMiddleware, deleteTask);
 
 // Comment routes
