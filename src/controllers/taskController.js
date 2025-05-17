@@ -11,6 +11,7 @@ import {getPaginationParams, createPaginatedResponse} from '../utils/pagination.
 import {Op} from 'sequelize';
 import TaskActivity from '../models/TaskActivity.js';
 import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
+import sequelize from '../config/database.js';
 
 const getAssignee = async (assigneeUsername) => {
     if (!assigneeUsername) return null;
@@ -106,6 +107,12 @@ export const addTask = async (req, res) => {
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
                 },
             ],
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
         });
 
         return successResponse(res, {data: populatedTask.toJSON()}, 201);
@@ -261,6 +268,12 @@ export const updateTask = async (req, res) => {
                 },
                 {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
         });
 
         return successResponse(res, {data: updatedTask.toJSON()});
@@ -290,6 +303,12 @@ export const fetchWorkspaceTask = async (req, res) => {
                 },
                 {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
             ],
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
         });
 
         if (!task) {
@@ -398,6 +417,12 @@ export const fetchWorkspaceTasks = async (req, res) => {
             order: [['createdAt', 'DESC']],
             distinct: true,
             subQuery: false,
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
         });
 
         const response = createPaginatedResponse(

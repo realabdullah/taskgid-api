@@ -10,8 +10,11 @@ import {
 } from '../utils/pagination.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {errorResponse} from '../utils/responseUtils.js';
-import {Op, Sequelize} from 'sequelize';
+import {Op} from 'sequelize';
+import Sequelize from '../config/database.js';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
+import Task from '../models/Task.js';
+import TaskAssignee from '../models/TaskAssignee.js';
 
 async function findWorkspaceBySlugAndCheckAccess(
     slug,
@@ -769,5 +772,192 @@ export const getWorkspaceActivities = async (req, res) => {
         console.error('Get Workspace Activities Error:', error);
         const statusCode = error.status || 500;
         return errorResponse(res, statusCode, error.message || 'Failed to fetch workspace activities');
+    }
+};
+
+export const getComprehensiveTeamMembers = async (req, res) => {
+    const {slug} = req.params;
+    const {page, limit, offset} = getPaginationParams(req.query);
+    const userId = req.user.id;
+
+    try {
+        const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(
+            slug,
+            userId,
+        );
+
+        if (error) return errorResponse(res, error.status, error.message);
+
+        const {count, rows: teamMemberships} = await WorkspaceTeam.findAndCountAll({
+            where: {workspaceId: workspace.id},
+            include: [
+                {
+                    model: User,
+                    as: 'memberDetail',
+                    attributes: [
+                        'id', 'firstName', 'lastName', 'email', 'profilePicture',
+                        'username', 'title', 'about', 'location', 'createdAt',
+                    ],
+                },
+            ],
+            limit,
+            offset,
+            order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
+            distinct: true,
+        });
+
+        const memberIds = teamMemberships.map((tm) => tm.memberDetail.id);
+        const tasksAssignedCount = await TaskAssignee.findAll({
+            attributes: [
+                'userId',
+                [Sequelize.fn('COUNT', Sequelize.col('task_id')), 'totalAssigned'],
+            ],
+            where: {
+                userId: {[Op.in]: memberIds},
+            },
+            include: [{
+                model: Task,
+                as: 'task',
+                attributes: [],
+                where: {workspaceId: workspace.id},
+                required: true,
+            }],
+            group: ['userId'],
+            raw: true,
+        });
+
+        const tasksCompletedCount = await TaskAssignee.findAll({
+            attributes: [
+                'userId',
+                [Sequelize.fn('COUNT', Sequelize.col('task_id')), 'totalCompleted'],
+            ],
+            where: {
+                userId: {[Op.in]: memberIds},
+            },
+            include: [{
+                model: Task,
+                as: 'task',
+                attributes: [],
+                where: {
+                    workspaceId: workspace.id,
+                    status: 'done',
+                },
+                required: true,
+            }],
+            group: ['userId'],
+            raw: true,
+        });
+
+        const assignedTasksMap = new Map(
+            tasksAssignedCount.map((item) => [item.userId, parseInt(item.totalAssigned, 10)]),
+        );
+
+        const completedTasksMap = new Map(
+            tasksCompletedCount.map((item) => [item.userId, parseInt(item.totalCompleted, 10)]),
+        );
+
+        const team = teamMemberships.map((tm) => {
+            const userId = tm.memberDetail.id;
+            return {
+                ...tm.memberDetail.toJSON(),
+                role: tm.role,
+                dateJoined: tm.createdAt,
+                taskStats: {
+                    assigned: assignedTasksMap.get(userId) || 0,
+                    completed: completedTasksMap.get(userId) || 0,
+                },
+            };
+        });
+
+        res.json(createPaginatedResponse(team, count, page, limit));
+    } catch (err) {
+        console.error('Error fetching comprehensive team data:', err);
+        return errorResponse(res, 500, 'Failed to fetch comprehensive team data');
+    }
+};
+
+export const getUserTasks = async (req, res) => {
+    const {slug, memberId} = req.params;
+    const {page, limit, offset} = getPaginationParams(req.query);
+    const userId = req.user.id;
+
+    try {
+        const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(
+            slug,
+            userId,
+        );
+
+        if (error) return errorResponse(res, error.status, error.message);
+
+        const isMember = await WorkspaceTeam.findOne({
+            where: {workspaceId: workspace.id, userId: memberId},
+        });
+        if (!isMember) return errorResponse(res, 404, 'User is not a member of this workspace');
+
+        const {count, rows: tasks} = await Task.findAndCountAll({
+            attributes: ['id', 'title', 'dueDate', 'priority', 'status'],
+            where: {
+                workspaceId: workspace.id,
+            },
+            include: [{
+                model: User,
+                as: 'assignees',
+                attributes: [],
+                where: {id: memberId},
+                through: {attributes: []},
+                required: true,
+            }],
+            limit,
+            offset,
+            order: [['dueDate', 'ASC'], ['priority', 'DESC']],
+            distinct: true,
+        });
+
+        res.json(createPaginatedResponse(tasks, count, page, limit));
+    } catch (err) {
+        console.error('Error fetching user tasks:', err);
+        return errorResponse(res, 500, 'Failed to fetch user tasks');
+    }
+};
+
+export const getUserWorkspaceActivities = async (req, res) => {
+    const {slug, memberId} = req.params;
+    const {page, limit, offset} = getPaginationParams(req.query);
+    const userId = req.user.id;
+
+    try {
+        const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(
+            slug,
+            userId,
+        );
+
+        if (error) return errorResponse(res, error.status, error.message);
+
+        const isMember = await WorkspaceTeam.findOne({
+            where: {workspaceId: workspace.id, userId: memberId},
+        });
+
+        if (!isMember) return errorResponse(res, 404, 'User is not a member of this workspace');
+
+        const {count, rows: activities} = await WorkspaceActivity.findAndCountAll({
+            where: {
+                workspaceId: workspace.id,
+                userId: memberId,
+            },
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            }],
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+        });
+
+        const response = createPaginatedResponse(activities, count, page, limit);
+        res.json(response);
+    } catch (err) {
+        console.error('Error fetching user activities:', err);
+        return errorResponse(res, 500, 'Failed to fetch user activities');
     }
 };
