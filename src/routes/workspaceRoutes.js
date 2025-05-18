@@ -14,6 +14,7 @@ import {
     getComprehensiveTeamMembers,
     getUserTasks,
     getUserWorkspaceActivities,
+    getTeamStatistics,
 } from '../controllers/workspaceController.js';
 import {
     getWorkspaceStatistics,
@@ -38,6 +39,7 @@ router.get('/:slug/activities', getWorkspaceActivities);
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', getWorkspaceTeam);
 router.get('/:slug/team/comprehensive', getComprehensiveTeamMembers);
+router.get('/:slug/team/statistics', getTeamStatistics);
 router.post('/:slug/team', addTeamMember);
 router.delete('/:slug/team/:userIdToRemove', removeTeamMember);
 
