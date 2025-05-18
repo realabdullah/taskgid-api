@@ -9,12 +9,13 @@ import {
     createPaginatedResponse,
 } from '../utils/pagination.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
-import {errorResponse} from '../utils/responseUtils.js';
+import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import {Op} from 'sequelize';
 import Sequelize from '../config/database.js';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
 import Task from '../models/Task.js';
 import TaskAssignee from '../models/TaskAssignee.js';
+import TaskActivity from '../models/TaskActivity.js';
 
 async function findWorkspaceBySlugAndCheckAccess(
     slug,
@@ -779,6 +780,16 @@ export const getComprehensiveTeamMembers = async (req, res) => {
     const {slug} = req.params;
     const {page, limit, offset} = getPaginationParams(req.query);
     const userId = req.user.id;
+    const {
+        search,
+        role,
+        sortBy = 'firstName',
+        sortOrder = 'ASC',
+        minTasksAssigned,
+        maxTasksAssigned,
+        minTasksCompleted,
+        maxTasksCompleted,
+    } = req.query;
 
     try {
         const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(
@@ -788,8 +799,28 @@ export const getComprehensiveTeamMembers = async (req, res) => {
 
         if (error) return errorResponse(res, error.status, error.message);
 
-        const {count, rows: teamMemberships} = await WorkspaceTeam.findAndCountAll({
-            where: {workspaceId: workspace.id},
+        const memberWhereConditions = {workspaceId: workspace.id};
+        if (role) memberWhereConditions.role = role;
+
+
+        const userWhereConditions = {};
+        if (search) {
+            userWhereConditions[Op.or] = [
+                {firstName: {[Op.like]: `%${search}%`}},
+                {lastName: {[Op.like]: `%${search}%`}},
+                {email: {[Op.like]: `%${search}%`}},
+                {username: {[Op.like]: `%${search}%`}},
+                {title: {[Op.like]: `%${search}%`}},
+                {location: {[Op.like]: `%${search}%`}},
+            ];
+        }
+
+        const validSortFields = ['firstName', 'lastName', 'email', 'username', 'title', 'location', 'createdAt'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'firstName';
+        const order = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+        const {rows: teamMemberships} = await WorkspaceTeam.findAndCountAll({
+            where: memberWhereConditions,
             include: [
                 {
                     model: User,
@@ -798,11 +829,12 @@ export const getComprehensiveTeamMembers = async (req, res) => {
                         'id', 'firstName', 'lastName', 'email', 'profilePicture',
                         'username', 'title', 'about', 'location', 'createdAt',
                     ],
+                    where: userWhereConditions,
                 },
             ],
             limit,
             offset,
-            order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
+            order: [[{model: User, as: 'memberDetail'}, sortField, order]],
             distinct: true,
         });
 
@@ -831,17 +863,12 @@ export const getComprehensiveTeamMembers = async (req, res) => {
                 'userId',
                 [Sequelize.fn('COUNT', Sequelize.col('task_id')), 'totalCompleted'],
             ],
-            where: {
-                userId: {[Op.in]: memberIds},
-            },
+            where: {userId: {[Op.in]: memberIds}},
             include: [{
                 model: Task,
                 as: 'task',
                 attributes: [],
-                where: {
-                    workspaceId: workspace.id,
-                    status: 'done',
-                },
+                where: {workspaceId: workspace.id, status: 'done'},
                 required: true,
             }],
             group: ['userId'],
@@ -856,20 +883,47 @@ export const getComprehensiveTeamMembers = async (req, res) => {
             tasksCompletedCount.map((item) => [item.userId, parseInt(item.totalCompleted, 10)]),
         );
 
-        const team = teamMemberships.map((tm) => {
+        let team = teamMemberships.map((tm) => {
             const userId = tm.memberDetail.id;
+            const assigned = assignedTasksMap.get(userId) || 0;
+            const completed = completedTasksMap.get(userId) || 0;
+
             return {
                 ...tm.memberDetail.toJSON(),
                 role: tm.role,
                 dateJoined: tm.createdAt,
-                taskStats: {
-                    assigned: assignedTasksMap.get(userId) || 0,
-                    completed: completedTasksMap.get(userId) || 0,
-                },
+                taskStats: {assigned, completed},
             };
         });
 
-        res.json(createPaginatedResponse(team, count, page, limit));
+        if (minTasksAssigned !== undefined) {
+            team = team.filter((member) => member.taskStats.assigned >= parseInt(minTasksAssigned, 10));
+        }
+        if (maxTasksAssigned !== undefined) {
+            team = team.filter((member) => member.taskStats.assigned <= parseInt(maxTasksAssigned, 10));
+        }
+        if (minTasksCompleted !== undefined) {
+            team = team.filter((member) => member.taskStats.completed >= parseInt(minTasksCompleted, 10));
+        }
+        if (maxTasksCompleted !== undefined) {
+            team = team.filter((member) => member.taskStats.completed <= parseInt(maxTasksCompleted, 10));
+        }
+
+        let totalCount;
+        if (minTasksAssigned !== undefined || maxTasksAssigned !== undefined ||
+            minTasksCompleted !== undefined || maxTasksCompleted !== undefined) {
+            totalCount = team.length;
+        } else {
+            totalCount = await WorkspaceTeam.count({
+                where: memberWhereConditions,
+                include: [
+                    {model: User, as: 'memberDetail', where: userWhereConditions},
+                ],
+                distinct: true,
+            });
+        }
+
+        res.json(createPaginatedResponse(team, totalCount, page, limit));
     } catch (err) {
         console.error('Error fetching comprehensive team data:', err);
         return errorResponse(res, 500, 'Failed to fetch comprehensive team data');
@@ -959,5 +1013,249 @@ export const getUserWorkspaceActivities = async (req, res) => {
     } catch (err) {
         console.error('Error fetching user activities:', err);
         return errorResponse(res, 500, 'Failed to fetch user activities');
+    }
+};
+
+export const getTeamStatistics = async (req, res) => {
+    const {slug} = req.params;
+    const userId = req.user.id;
+    const timePeriod = req.query.period || 'month';
+
+    try {
+        const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(slug, userId);
+        if (error) return errorResponse(res, error.status, error.message);
+
+        const now = new Date();
+        let startDate;
+
+        switch (timePeriod) {
+        case 'week':
+            startDate = new Date(now);
+            startDate.setDate(now.getDate() - now.getDay());
+            startDate.setHours(0, 0, 0, 0);
+            break;
+        case 'month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+        case 'quarter':
+            const quarter = Math.floor(now.getMonth() / 3);
+            startDate = new Date(now.getFullYear(), quarter * 3, 1);
+            break;
+        case 'year':
+            startDate = new Date(now.getFullYear(), 0, 1);
+            break;
+        default:
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
+
+        const teamMembers = await WorkspaceTeam.findAll({
+            where: {workspaceId: workspace.id},
+            include: [{
+                model: User,
+                as: 'memberDetail',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            }],
+        });
+
+        const memberIds = teamMembers.map((member) => member.userId);
+
+        const allTasks = await Task.findAll({
+            where: {
+                workspaceId: workspace.id,
+                createdAt: {[Op.gte]: startDate},
+            },
+            include: [{
+                model: User,
+                as: 'assignees',
+                attributes: ['id'],
+                through: {attributes: []},
+            }],
+        });
+
+        const tasksWithDueDate = allTasks.filter((task) =>
+            task.dueDate && new Date(task.dueDate) >= startDate && new Date(task.dueDate) <= now,
+        );
+
+        const totalTasks = allTasks.length;
+        const completedTasks = allTasks.filter((task) => task.status === 'done').length;
+        const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+        let onTimeDeliveries = 0;
+        const totalTasksWithDueDate = tasksWithDueDate.length;
+
+        for (const task of tasksWithDueDate) {
+            if (task.status === 'done') {
+                const statusChangeActivity = await TaskActivity.findOne({
+                    where: {
+                        'taskId': task.id,
+                        'action': 'status_changed',
+                        'details.changeDetails.to': 'done',
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+
+                if (statusChangeActivity && new Date(statusChangeActivity.createdAt) <= new Date(task.dueDate)) {
+                    onTimeDeliveries++;
+                }
+            }
+        }
+
+        const onTimeDeliveryRate = totalTasksWithDueDate > 0 ? (onTimeDeliveries / totalTasksWithDueDate) * 100 : 0;
+
+        const memberTaskAssignments = new Map();
+
+        for (const task of allTasks) {
+            for (const assignee of task.assignees) {
+                const assigneeId = assignee.id;
+                memberTaskAssignments.set(assigneeId, (memberTaskAssignments.get(assigneeId) || 0) + 1);
+            }
+        }
+
+        const activeMembers = memberTaskAssignments.size;
+        const teamUtilizationRate = memberIds.length > 0 ? (activeMembers / memberIds.length) * 100 : 0;
+
+        const memberStats = [];
+
+        for (const member of teamMembers) {
+            const memberId = member.userId;
+
+            const memberTasks = allTasks.filter((task) =>
+                task.assignees.some((assignee) => assignee.id === memberId),
+            );
+
+            const memberTasksCount = memberTasks.length;
+            const memberCompletedTasksCount = memberTasks.filter((task) => task.status === 'done').length;
+            const memberCompletionRate = memberTasksCount > 0 ?
+                (memberCompletedTasksCount / memberTasksCount) * 100 : 0;
+
+            let memberOnTimeDeliveries = 0;
+            const memberTasksWithDueDate = memberTasks.filter((task) =>
+                task.dueDate && new Date(task.dueDate) >= startDate && new Date(task.dueDate) <= now,
+            );
+
+            for (const task of memberTasksWithDueDate) {
+                if (task.status === 'done') {
+                    const statusChangeActivity = await TaskActivity.findOne({
+                        where: {
+                            'taskId': task.id,
+                            'action': 'status_changed',
+                            'details.changeDetails.to': 'done',
+                        },
+                        order: [['createdAt', 'DESC']],
+                    });
+
+                    if (statusChangeActivity && new Date(statusChangeActivity.createdAt) <= new Date(task.dueDate)) {
+                        memberOnTimeDeliveries++;
+                    }
+                }
+            }
+
+            const memberOnTimeRate = memberTasksWithDueDate.length > 0 ?
+                (memberOnTimeDeliveries / memberTasksWithDueDate.length) * 100 : 0;
+
+            let totalCompletionTimeHours = 0;
+            let tasksWithCompletionTime = 0;
+
+            for (const task of memberTasks.filter((t) => t.status === 'done')) {
+                const statusChangeActivity = await TaskActivity.findOne({
+                    where: {
+                        'taskId': task.id,
+                        'action': 'status_changed',
+                        'details.changeDetails.to': 'done',
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+
+                if (statusChangeActivity) {
+                    const creationTime = new Date(task.createdAt);
+                    const completionTime = new Date(statusChangeActivity.createdAt);
+                    const completionTimeHours = (completionTime - creationTime) / (1000 * 60 * 60);
+
+                    totalCompletionTimeHours += completionTimeHours;
+                    tasksWithCompletionTime++;
+                }
+            }
+
+            const avgCompletionTimeHours = tasksWithCompletionTime > 0 ?
+                totalCompletionTimeHours / tasksWithCompletionTime : 0;
+
+            memberStats.push({
+                member: {
+                    id: memberId,
+                    username: member.memberDetail.username,
+                    firstName: member.memberDetail.firstName,
+                    lastName: member.memberDetail.lastName,
+                    profilePicture: member.memberDetail.profilePicture,
+                },
+                taskCount: memberTasksCount,
+                completedTaskCount: memberCompletedTasksCount,
+                completionRate: memberCompletionRate,
+                onTimeDeliveryRate: memberOnTimeRate,
+                avgCompletionTimeHours,
+            });
+        }
+
+        // Sort by completion rate to get top performers
+        memberStats.sort((a, b) => b.completionRate - a.completionRate);
+        const topPerformers = memberStats.slice(0, 3);
+
+        // Calculate average task completion time for the team
+        const avgTeamCompletionTimeHours = memberStats.reduce(
+            (sum, stats) => sum + stats.avgCompletionTimeHours, 0,
+        ) / (memberStats.length || 1);
+
+        // Calculate task distribution (how evenly tasks are distributed)
+        const taskAssignmentCounts = Array.from(memberTaskAssignments.values());
+        const avgTasksPerMember = taskAssignmentCounts.length > 0 ?
+            taskAssignmentCounts.reduce((sum, count) => sum + count, 0) / taskAssignmentCounts.length : 0;
+
+        // Calculate standard deviation to determine task distribution evenness
+        const taskCountVariance = taskAssignmentCounts.length > 0 ?
+            taskAssignmentCounts.reduce((sum, count) => sum + Math.pow(count - avgTasksPerMember, 2), 0) /
+            taskAssignmentCounts.length : 0;
+        const taskDistributionStdDev = Math.sqrt(taskCountVariance);
+
+        // Task distribution evenness as a percentage (lower std dev means more even distribution)
+        // Using a formula to convert std dev to a 0-100 scale where 100 is perfectly even
+        const taskDistributionEvenness = avgTasksPerMember > 0 ?
+            Math.max(0, 100 - (taskDistributionStdDev / avgTasksPerMember) * 100) : 100;
+
+        // Calculate average priority level of tasks
+        const priorityMap = {low: 1, medium: 2, high: 3};
+        const prioritySum = allTasks.reduce((sum, task) => sum + (priorityMap[task.priority] || 0), 0);
+        const avgPriorityLevel = totalTasks > 0 ? prioritySum / totalTasks : 0;
+
+        const data = {
+            timePeriod,
+            periodStart: startDate,
+            periodEnd: now,
+            overallStats: {
+                totalTasks,
+                completedTasks,
+                completionRate: parseFloat(completionRate.toFixed(2)),
+                onTimeDeliveryRate: parseFloat(onTimeDeliveryRate.toFixed(2)),
+                teamUtilizationRate: parseFloat(teamUtilizationRate.toFixed(2)),
+                avgCompletionTimeHours: parseFloat(avgTeamCompletionTimeHours.toFixed(2)),
+                taskDistributionEvenness: parseFloat(taskDistributionEvenness.toFixed(2)),
+                avgPriorityLevel: parseFloat(avgPriorityLevel.toFixed(2)),
+            },
+            topPerformers: topPerformers.map((performer) => ({
+                ...performer,
+                completionRate: parseFloat(performer.completionRate.toFixed(2)),
+                onTimeDeliveryRate: parseFloat(performer.onTimeDeliveryRate.toFixed(2)),
+                avgCompletionTimeHours: parseFloat(performer.avgCompletionTimeHours.toFixed(2)),
+            })),
+            memberStats: memberStats.map((stat) => ({
+                ...stat,
+                completionRate: parseFloat(stat.completionRate.toFixed(2)),
+                onTimeDeliveryRate: parseFloat(stat.onTimeDeliveryRate.toFixed(2)),
+                avgCompletionTimeHours: parseFloat(stat.avgCompletionTimeHours.toFixed(2)),
+            })),
+        };
+
+        return successResponse(res, {data});
+    } catch (err) {
+        console.error('Error fetching team statistics:', err);
+        return errorResponse(res, 500, 'Failed to fetch team statistics');
     }
 };
