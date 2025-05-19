@@ -6,6 +6,7 @@ import {
     fetchWorkspaceTask,
     fetchWorkspaceTasks,
     getTaskActivities,
+    batchAssignTasks,
 } from '../controllers/taskController.js';
 import {
     getTaskComments,
@@ -22,6 +23,7 @@ import {
     validateTaskInput,
     validateTaskUpdateInput,
     validateCommentInput,
+    validateBatchAssignInput,
 } from '../middleware/validationMiddleware.js';
 
 // eslint-disable-next-line new-cap
@@ -35,6 +37,7 @@ router.get('/:id', checkMemberMiddleware, fetchWorkspaceTask);
 router.get('/:id/activities', checkMemberMiddleware, getTaskActivities);
 
 router.post('/', checkMemberMiddleware, validateTaskInput, addTask);
+router.post('/batch-assign', checkMemberMiddleware, validateBatchAssignInput, batchAssignTasks);
 router.patch('/:id', checkMemberMiddleware, validateTaskUpdateInput, updateTask);
 router.delete('/:id', checkMemberMiddleware, deleteTask);
 
