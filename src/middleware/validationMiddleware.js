@@ -324,3 +324,38 @@ export const validateTaskUpdateInput = [
         next();
     },
 ];
+
+/**
+ * Middleware to validate batch task assignment input
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next function
+ * @return {void}
+ */
+export const validateBatchAssignInput = [
+    body('taskIds')
+        .isArray({min: 1})
+        .withMessage('At least one task ID is required'),
+    body('taskIds.*')
+        .isUUID()
+        .withMessage('Each task ID must be a valid UUID'),
+    body('assigneeId')
+        .trim()
+        .notEmpty()
+        .withMessage('Assignee ID is required')
+        .isUUID()
+        .withMessage('Assignee ID must be a valid UUID'),
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array().map((err) => ({
+                    field: err.param,
+                    message: err.msg,
+                })),
+            });
+        }
+        next();
+    },
+];

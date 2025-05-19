@@ -471,3 +471,83 @@ export const getTaskActivities = async (req, res) => {
         return errorResponse(res, statusCode, error.message || 'Failed to fetch task activities');
     }
 };
+
+export const batchAssignTasks = async (req, res) => {
+    try {
+        const {workspaceSlug} = req.params;
+        const {taskIds, assigneeId} = req.body;
+
+        if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+            return errorResponse(res, 400, 'Task IDs array is required');
+        }
+
+        if (!assigneeId) return errorResponse(res, 400, 'Assignee ID is required');
+
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        const workspaceTeam = await sequelize.models.WorkspaceTeam.findOne({
+            where: {workspaceId: workspaceId, userId: assigneeId},
+        });
+
+        if (!workspaceTeam) return errorResponse(res, 403, 'Assignee is not a member of this workspace');
+
+        const tasks = await Task.findAll({
+            where: {id: {[Op.in]: taskIds}, workspaceId},
+            attributes: ['id', 'title'],
+        });
+
+        if (tasks.length === 0) return errorResponse(res, 404, 'No valid tasks found in this workspace');
+
+        const foundTaskIds = tasks.map((task) => task.id);
+        const invalidTaskIds = taskIds.filter((id) => !foundTaskIds.includes(id));
+
+        const existingAssignments = await TaskAssignee.findAll({
+            where: {taskId: {[Op.in]: foundTaskIds}, userId: assigneeId},
+        });
+
+        const existingTaskIds = existingAssignments.map((assignment) => assignment.taskId);
+        const newTaskIds = foundTaskIds.filter((id) => !existingTaskIds.includes(id));
+
+        if (newTaskIds.length > 0) {
+            const assignmentEntries = newTaskIds.map((taskId) => ({taskId, userId: assigneeId}));
+            await TaskAssignee.bulkCreate(assignmentEntries);
+
+            // Log activity for each task
+            for (const taskId of newTaskIds) {
+                const task = tasks.find((t) => t.id === taskId);
+                const meta = {
+                    taskId,
+                    taskTitle: task.title,
+                    assigneeIds: [assigneeId],
+                };
+
+                await logTaskActivity(taskId, req.user.id, 'assigned', meta);
+                await logWorkspaceActivity(workspaceId, req.user.id, 'task_assigned', meta);
+            }
+
+            // Send notification to assignee (as a batch notification)
+            await notificationService.sendBulkNotification(
+                [assigneeId],
+                NOTIFICATION_TYPES.TASK_ASSIGNED,
+                {
+                    taskCount: newTaskIds.length,
+                    assignerId: req.user.id,
+                    assignerName: req.user.firstName || req.user.username,
+                    workspaceSlug,
+                },
+            );
+        }
+
+        return successResponse(res, {
+            message: 'Tasks assigned successfully',
+            data: {
+                tasksAssigned: newTaskIds.length,
+                alreadyAssigned: existingTaskIds.length,
+                invalidTasks: invalidTaskIds.length,
+            },
+        });
+    } catch (error) {
+        console.error('Batch Assign Tasks Error:', error);
+        const statusCode = error.status || 500;
+        return errorResponse(res, statusCode, error.message || 'Failed to assign tasks');
+    }
+};
