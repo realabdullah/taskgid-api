@@ -5,7 +5,13 @@ import {createStorageProvider} from './storageProviders.js';
 import 'dotenv/config';
 
 // Get storage provider from environment variables
-const STORAGE_PROVIDER = process.env.STORAGE_PROVIDER || 'local';
+// Default to 'cloudinary' if not specified (no longer supporting 'local')
+const STORAGE_PROVIDER = process.env.STORAGE_PROVIDER || 'cloudinary';
+
+// Validate storage provider is supported
+if (!['cloudinary', 's3', 'r2'].includes(STORAGE_PROVIDER)) {
+    console.error(`Invalid storage provider: ${STORAGE_PROVIDER}. Using cloudinary as fallback.`);
+}
 
 // Storage provider configuration
 const storageConfig = {
@@ -36,23 +42,53 @@ const storageConfig = {
 };
 
 // Create storage provider instance
-const storageProvider = createStorageProvider(
-    STORAGE_PROVIDER,
-    storageConfig[STORAGE_PROVIDER],
-);
+let storageProvider;
+
+try {
+    storageProvider = createStorageProvider(
+        STORAGE_PROVIDER,
+        storageConfig[STORAGE_PROVIDER],
+    );
+} catch (error) {
+    console.error(`Failed to initialize storage provider (${STORAGE_PROVIDER}): ${error.message}`);
+    console.error('Please configure your cloud storage provider in environment variables.');
+    storageProvider = {
+        upload: async () => {
+            throw new Error('Storage provider not properly configured. File upload unavailable.');
+        },
+        delete: async () => {
+            throw new Error('Storage provider not properly configured. File deletion unavailable.');
+        },
+        getFileUrl: () => {
+            throw new Error('Storage provider not properly configured. File URL retrieval unavailable.');
+        },
+        getInfo: async () => {
+            throw new Error('Storage provider not properly configured. File info retrieval unavailable.');
+        },
+    };
+}
 
 /**
  * Process and save an uploaded file
  * @param {Object} file - File object from multer
  * @param {Object} options - Processing options
- * @param {boolean} options.compress - Whether to compress the file (default: true)
- * @param {number} options.maxWidth - Maximum width for images (default: 800)
- * @param {number} options.maxHeight - Maximum height for images (default: 800)
- * @param {number} options.quality - JPEG quality (default: 80)
+ * @param {boolean} options.processImage - Whether to process the image (default: true for images)
+ * @param {number} options.width - Maximum width for images (default: 800)
+ * @param {number} options.height - Maximum height for images (default: 800)
+ * @param {number} options.quality - JPEG quality (default: 70)
  * @return {Promise<Object>} File information
  */
 export const processAndSaveFile = async (file, options = {}) => {
-    return storageProvider.upload(file, options);
+    // Set default options for image processing
+    const processOptions = {
+        processImage: options.processImage ?? (file.mimetype?.startsWith('image/') ? true : false),
+        width: options.width || 800,
+        height: options.height || 800,
+        quality: options.quality || 70,
+        ...options,
+    };
+
+    return storageProvider.upload(file, processOptions);
 };
 
 /**
