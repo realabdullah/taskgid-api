@@ -1,11 +1,9 @@
 /**
  * Storage provider abstractions for different cloud storage services
  */
-import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import {v4 as uuidv4} from 'uuid';
-import crypto from 'crypto';
 import {S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand} from '@aws-sdk/client-s3';
 import cloudinary from 'cloudinary';
 
@@ -38,126 +36,6 @@ class BaseStorageProvider {
    */
     getFileUrl(fileId) {
         throw new Error('Method not implemented');
-    }
-}
-
-/**
- * Local filesystem storage provider
- */
-class LocalStorageProvider extends BaseStorageProvider {
-    /**
-   * Initialize local storage provider
-   * @param {Object} config - Configuration object
-   */
-    constructor(config) {
-        super();
-        this.uploadDir = path.join(process.cwd(), 'uploads');
-        this.ensureUploadDir();
-        this.publicUrl?.publicUrl || 'http://localhost:3000/uploads';
-    }
-
-    /**
-   * Ensure upload directory exists
-   */
-    async ensureUploadDir() {
-        if (!fs.existsSync(this.uploadDir)) {
-            fs.mkdirSync(this.uploadDir, {recursive: true});
-        }
-    }
-
-    /**
-   * Generate a unique filename
-   * @param {string} originalFilename - Original filename
-   * @return {string} Unique filename
-   */
-    generateUniqueFilename(originalFilename) {
-        const timestamp = Date.now();
-        const randomString = crypto.randomBytes(8).toString('hex');
-        const extension = path.extname(originalFilename);
-        return `${timestamp}-${randomString}${extension}`;
-    }
-
-    /**
-   * Upload a file to local storage
-   * @param {Object} file - File object
-   * @param {Object} options - Upload options
-   * @return {Promise<Object>} File information
-   */
-    async upload(file, options = {}) {
-        const filename = this.generateUniqueFilename(file.originalname);
-        const filepath = path.join(this.uploadDir, filename);
-
-        // Process image if needed
-        if (file.mimetype.startsWith('image/') && options.processImage) {
-            await sharp(file.buffer)
-                .resize(options.width || 800, options.height || 800, {
-                    fit: 'inside',
-                    withoutEnlargement: true,
-                })
-                .jpeg({
-                    quality: 70,
-                    progressive: true,
-                    optimizeCoding: true,
-                    mozjpeg: true,
-                })
-                .toFile(filepath);
-        } else {
-            // For non-image files, write directly
-            await fs.promises.writeFile(filepath, file.buffer);
-        }
-
-        const stats = await fs.promises.stat(filepath);
-        return {
-            filename,
-            originalname: file.originalname,
-            mimetype: file.mimetype,
-            size: stats.size,
-            path: filepath,
-            url: `${this.publicUrl}/${filename}`,
-        };
-    }
-
-    /**
-   * Delete a file from local storage
-   * @param {string} filename - Filename to delete
-   * @return {Promise<boolean>} Success status
-   */
-    async delete(filename) {
-        const filepath = path.join(this.uploadDir, filename);
-        if (fs.existsSync(filepath)) {
-            fs.unlinkSync(filepath);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-   * Get file URL for local storage
-   * @param {string} filename - Filename
-   * @return {string} File URL
-   */
-    getFileUrl(filename) {
-        return `${this.publicUrl}/${filename}`;
-    }
-
-    /**
-   * Get file information
-   * @param {string} fileId - File identifier
-   * @return {Promise<Object|null>} File information or null if not found
-   */
-    async getInfo(fileId) {
-        const filepath = path.join(this.uploadDir, fileId);
-        if (fs.existsSync(filepath)) {
-            const stats = fs.statSync(filepath);
-            return {
-                id: fileId,
-                url: `${this.publicUrl}/${fileId}`,
-                filename: fileId,
-                size: stats.size,
-                created: stats.birthtime,
-            };
-        }
-        return null;
     }
 }
 
@@ -491,19 +369,31 @@ class CloudflareR2StorageProvider extends BaseStorageProvider {
  * @param {string} provider - Provider name
  * @param {Object} config - Provider configuration
  * @return {BaseStorageProvider} Storage provider instance
+ * @throws {Error} If provider is not supported or configuration is missing
  */
 export function createStorageProvider(provider, config) {
+    if (!config) {
+        throw new Error(`Configuration missing for storage provider: ${provider}`);
+    }
+
     switch (provider) {
-    case 'local':
-        return new LocalStorageProvider(config);
     case 'cloudinary':
+        if (!config.cloudName || !config.apiKey || !config.apiSecret) {
+            throw new Error('Cloudinary configuration is incomplete');
+        }
         return new CloudinaryStorageProvider(config);
     case 's3':
+        if (!config.accessKeyId || !config.secretAccessKey || !config.bucket) {
+            throw new Error('AWS S3 configuration is incomplete');
+        }
         return new S3StorageProvider(config);
     case 'r2':
+        if (!config.accessKeyId || !config.secretAccessKey || !config.accountId || !config.bucket) {
+            throw new Error('Cloudflare R2 configuration is incomplete');
+        }
         return new CloudflareR2StorageProvider(config);
     default:
-        return new LocalStorageProvider(config);
+        throw new Error(`Unsupported storage provider: ${provider}. Use 'cloudinary', 's3', or 'r2'.`);
     }
 }
 
