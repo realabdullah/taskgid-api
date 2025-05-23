@@ -5,6 +5,18 @@ import emailService from '../utils/emailService.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import 'dotenv/config';
 
+/**
+ * Register a new user
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body with user registration data
+ * @param {string} req.body.email - User email
+ * @param {string} req.body.password - User password
+ * @param {string} req.body.firstName - User first name
+ * @param {string} req.body.lastName - User last name
+ * @param {string} req.body.username - User username
+ * @param {Object} res - Express response object
+ * @return {Object} Response with user data and tokens or error
+ */
 export const register = async (req, res) => {
     try {
         const {email, password, firstName, lastName, username} = req.body;
@@ -86,6 +98,15 @@ export const register = async (req, res) => {
     }
 };
 
+/**
+ * Authenticate a user and provide access tokens
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.email - User email
+ * @param {string} req.body.password - User password
+ * @param {Object} res - Express response object
+ * @return {Object} Response with user data and tokens or error
+ */
 export const login = async (req, res) => {
     try {
         const {email, password} = req.body;
@@ -109,6 +130,12 @@ export const login = async (req, res) => {
     }
 };
 
+/**
+ * Log out a user by clearing refresh token cookie
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @return {Object} Response with success message or error
+ */
 export const logout = async (req, res) => {
     try {
         res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
@@ -118,6 +145,14 @@ export const logout = async (req, res) => {
     }
 };
 
+/**
+ * Refresh access token using refresh token
+ * @param {Object} req - Express request object
+ * @param {Object} req.cookies - Request cookies
+ * @param {string} req.cookies.refreshToken - Refresh token
+ * @param {Object} res - Express response object
+ * @return {Object} Response with new access token or error
+ */
 export const refresh = async (req, res) => {
     const oldRefreshToken = req.cookies.refreshToken;
 
@@ -154,6 +189,11 @@ export const refresh = async (req, res) => {
     }
 };
 
+/**
+ * Get user ID from refresh token
+ * @param {string} token - Refresh token
+ * @return {string|null} - User ID or null if token is invalid
+ */
 export const getUserIdFromRefreshToken = async (token) => {
     console.warn(
         'getUserIdFromRefreshToken needs actual implementation! Token received:',
@@ -163,6 +203,13 @@ export const getUserIdFromRefreshToken = async (token) => {
     return null;
 };
 
+/**
+ * Get the authenticated user's profile with workspace count
+ * @param {Object} req - Express request object
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with user data or error
+ */
 export const getUser = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id);
@@ -178,6 +225,23 @@ export const getUser = async (req, res) => {
     }
 };
 
+/**
+ * Update the authenticated user's profile
+ * @param {Object} req - Express request object
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} req.body - Request body with fields to update
+ * @param {string} [req.body.username] - Updated username
+ * @param {string} [req.body.firstName] - Updated first name
+ * @param {string} [req.body.lastName] - Updated last name
+ * @param {string} [req.body.profilePicture] - Updated profile picture URL
+ * @param {string} [req.body.title] - Updated title
+ * @param {string} [req.body.about] - Updated about text
+ * @param {string} [req.body.location] - Updated location
+ * @param {string} [req.body.password] - Current password (required for password change)
+ * @param {string} [req.body.newPassword] - New password
+ * @param {Object} res - Express response object
+ * @return {Object} Response with updated user data or error
+ */
 export const updateUserProfile = async (req, res) => {
     try {
         const allowedUpdateFields = [
@@ -332,6 +396,15 @@ export const updateUserProfile = async (req, res) => {
     }
 };
 
+/**
+ * Update FCM token for the authenticated user
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.fcmToken - FCM token to update
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with success message or error
+ */
 export const updateFCMToken = async (req, res) => {
     try {
         const {fcmToken} = req.body;
@@ -353,6 +426,15 @@ export const updateFCMToken = async (req, res) => {
     }
 };
 
+/**
+ * Update Knock token for the authenticated user
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.knockToken - Knock token to update
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with success message or error
+ */
 export const updateKnockToken = async (req, res) => {
     try {
         const {knockToken} = req.body;

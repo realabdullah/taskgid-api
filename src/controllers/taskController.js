@@ -13,12 +13,22 @@ import TaskActivity from '../models/TaskActivity.js';
 import {NOTIFICATION_TYPES} from '../constants/notificationTypes.js';
 import sequelize from '../config/database.js';
 
+/**
+ * Get user ID by assignee username
+ * @param {string} assigneeUsername - Username of the assignee
+ * @return {Promise<string|null>} - User ID or null if not found
+ */
 const getAssignee = async (assigneeUsername) => {
     if (!assigneeUsername) return null;
     const user = await User.findOne({where: {username: assigneeUsername}, attributes: ['id']});
     return user ? user.id : null;
 };
 
+/**
+ * Get multiple user IDs by their usernames
+ * @param {Array<string>} assigneeUsernames - Array of usernames
+ * @return {Promise<Array<string>>} - Array of user IDs
+ */
 const getAssignees = async (assigneeUsernames) => {
     if (!assigneeUsernames || !assigneeUsernames.length) return [];
 
@@ -31,6 +41,12 @@ const getAssignees = async (assigneeUsernames) => {
     return assigneeIds;
 };
 
+/**
+ * Get workspace ID from slug
+ * @param {string} slug - Workspace slug
+ * @return {Promise<string>} - Workspace ID
+ * @throws {Object} - Error object with status and message if workspace not found
+ */
 const getWorkspaceIdFromSlug = async (slug) => {
     const workspace = await Workspace.findOne({where: {slug}, attributes: ['id']});
     if (!workspace) {
@@ -40,13 +56,33 @@ const getWorkspaceIdFromSlug = async (slug) => {
     return workspace.id;
 };
 
+/**
+ * Parse query parameter into array
+ * @param {string|Array<string>} queryParam - Query parameter to parse
+ * @return {Array<string>|undefined} - Parsed array or undefined if empty
+ */
 const parseQueryArray = (queryParam) => {
     if (!queryParam) return undefined;
     if (Array.isArray(queryParam)) return queryParam.filter((item) => item.trim() !== '');
     return queryParam.split(',').map((item) => item.trim()).filter((item) => item.trim() !== '');
 };
 
-
+/**
+ * Create a new task in the specified workspace
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.body - Request body with task details
+ * @param {string} req.body.title - Task title
+ * @param {string} req.body.description - Task description
+ * @param {string} req.body.status - Task status
+ * @param {string} req.body.priority - Task priority
+ * @param {string} req.body.dueDate - Task due date
+ * @param {Array<string>} req.body.assignees - Array of assignee usernames
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with created task data or error
+ */
 export const addTask = async (req, res) => {
     try {
         const {workspaceSlug} = req.params;
@@ -123,6 +159,23 @@ export const addTask = async (req, res) => {
     }
 };
 
+/**
+ * Update an existing task in the specified workspace
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {string} req.params.id - Task ID
+ * @param {Object} req.body - Request body with fields to update
+ * @param {string} [req.body.title] - Updated task title
+ * @param {string} [req.body.description] - Updated task description
+ * @param {string} [req.body.status] - Updated task status
+ * @param {string} [req.body.priority] - Updated task priority
+ * @param {string} [req.body.dueDate] - Updated task due date
+ * @param {Array<string>} [req.body.assignees] - Updated array of assignee usernames
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with updated task data or error
+ */
 export const updateTask = async (req, res) => {
     try {
         const {workspaceSlug, id: taskId} = req.params;
@@ -284,6 +337,15 @@ export const updateTask = async (req, res) => {
     }
 };
 
+/**
+ * Fetch a single task from a workspace
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {string} req.params.id - Task ID
+ * @param {Object} res - Express response object
+ * @return {Object} Response with task data or error
+ */
 export const fetchWorkspaceTask = async (req, res) => {
     try {
         const {workspaceSlug, id: taskId} = req.params;
@@ -323,6 +385,16 @@ export const fetchWorkspaceTask = async (req, res) => {
     }
 };
 
+/**
+ * Delete a task from a workspace
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {string} req.params.id - Task ID
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with success message or error
+ */
 export const deleteTask = async (req, res) => {
     try {
         const {workspaceSlug, id: taskId} = req.params;
@@ -347,7 +419,22 @@ export const deleteTask = async (req, res) => {
     }
 };
 
-
+/**
+ * Fetch tasks from a workspace with filtering and pagination
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.query - Query parameters for filtering and pagination
+ * @param {string} [req.query.search] - Search term for task title and description
+ * @param {string} [req.query.assignee] - Filter by assignee (can be 'me' or 'unassigned')
+ * @param {string|Array<string>} [req.query.status] - Filter by status
+ * @param {string|Array<string>} [req.query.priority] - Filter by priority
+ * @param {number} [req.query.page] - Page number for pagination
+ * @param {number} [req.query.limit] - Number of items per page
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with paginated tasks or error
+ */
 export const fetchWorkspaceTasks = async (req, res) => {
     try {
         const {workspaceSlug} = req.params;
@@ -360,7 +447,6 @@ export const fetchWorkspaceTasks = async (req, res) => {
         if (assignee === 'me' && !currentUserId) {
             return errorResponse(res, 401, 'Authentication required to filter by tasks assigned to you.');
         }
-
 
         const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
         if (!workspaceId) return errorResponse(res, 404, 'Workspace not found.');
@@ -439,6 +525,18 @@ export const fetchWorkspaceTasks = async (req, res) => {
     }
 };
 
+/**
+ * Get activities for a specific task
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {string} req.params.id - Task ID
+ * @param {Object} req.query - Query parameters for pagination
+ * @param {number} [req.query.page] - Page number for pagination
+ * @param {number} [req.query.limit] - Number of items per page
+ * @param {Object} res - Express response object
+ * @return {Object} Response with paginated task activities or error
+ */
 export const getTaskActivities = async (req, res) => {
     try {
         const {workspaceSlug, id: taskId} = req.params;
@@ -472,6 +570,18 @@ export const getTaskActivities = async (req, res) => {
     }
 };
 
+/**
+ * Batch assign multiple tasks to a single user
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.body - Request body
+ * @param {Array<string>} req.body.taskIds - Array of task IDs to assign
+ * @param {string} req.body.assigneeId - ID of the user to assign tasks to
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with assignment results or error
+ */
 export const batchAssignTasks = async (req, res) => {
     try {
         const {workspaceSlug} = req.params;
