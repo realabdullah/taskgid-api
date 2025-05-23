@@ -17,6 +17,13 @@ import Task from '../models/Task.js';
 import TaskAssignee from '../models/TaskAssignee.js';
 import TaskActivity from '../models/TaskActivity.js';
 
+/**
+ * Find a workspace by slug and check if user has access
+ * @param {string} slug - Workspace slug
+ * @param {string} userId - User ID
+ * @param {boolean} checkRole - Whether to check role (default: true)
+ * @return {Object} Object containing workspace, role and error information
+ */
 async function findWorkspaceBySlugAndCheckAccess(
     slug,
     userId,
@@ -50,6 +57,12 @@ async function findWorkspaceBySlugAndCheckAccess(
     return {workspace, role, error: null};
 }
 
+/**
+ * Get member counts for multiple workspaces
+ * @param {Array<string>} workspaceIds - Array of workspace IDs
+ * @return {Map} Map of workspace IDs to member counts
+ * @throws {Error} If fetching member counts fails
+ */
 const getMemberCounts = async (workspaceIds) => {
     if (!workspaceIds || workspaceIds.length === 0) return new Map();
 
@@ -71,6 +84,14 @@ const getMemberCounts = async (workspaceIds) => {
     }
 };
 
+/**
+ * Fetch workspaces created by a user with pagination
+ * @param {string} userId - User ID
+ * @param {Object} paginationParams - Pagination parameters
+ * @param {number} paginationParams.limit - Number of items per page
+ * @param {number} paginationParams.offset - Offset for pagination
+ * @return {Object} Object with count and rows of workspaces
+ */
 const fetchCreatedWorkspaces = async (userId, {limit, offset}) => {
     const totalCount = await Workspace.count({where: {userId: userId}});
     if (totalCount === 0) return {count: 0, rows: []};
@@ -111,6 +132,14 @@ const fetchCreatedWorkspaces = async (userId, {limit, offset}) => {
     return {count: totalCount, rows: workspacesWithDetails};
 };
 
+/**
+ * Fetch workspaces where user is invited with pagination
+ * @param {string} userId - User ID
+ * @param {Object} paginationParams - Pagination parameters
+ * @param {number} paginationParams.limit - Number of items per page
+ * @param {number} paginationParams.offset - Offset for pagination
+ * @return {Object} Object with count and rows of workspaces
+ */
 const fetchInvitedWorkspaces = async (userId, {limit, offset}) => {
     const membershipWhereCondition = {
         userId: userId,
@@ -175,6 +204,14 @@ const fetchInvitedWorkspaces = async (userId, {limit, offset}) => {
     return {count: totalCount, rows: workspacesWithDetails};
 };
 
+/**
+ * Fetch all workspaces where user is a member with pagination
+ * @param {string} userId - User ID
+ * @param {Object} paginationParams - Pagination parameters
+ * @param {number} paginationParams.limit - Number of items per page
+ * @param {number} paginationParams.offset - Offset for pagination
+ * @return {Object} Object with count and rows of workspaces
+ */
 const fetchAllMemberWorkspaces = async (userId, {limit, offset}) => {
     const membershipWhereCondition = {userId: userId};
 
@@ -237,6 +274,17 @@ const fetchAllMemberWorkspaces = async (userId, {limit, offset}) => {
     return {count: totalCount, rows: workspacesWithDetails};
 };
 
+/**
+ * Get workspaces for the authenticated user with filtering and pagination
+ * @param {Object} req - Express request object
+ * @param {Object} req.query - Query parameters
+ * @param {string} [req.query.type='all'] - Filter type ('created', 'invited', or 'all')
+ * @param {number} [req.query.page] - Page number for pagination
+ * @param {number} [req.query.limit] - Number of items per page
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with paginated workspaces or error
+ */
 export const getWorkspaces = async (req, res) => {
     const {page, limit, offset} = getPaginationParams(req.query);
     const userId = req.user?.id;
@@ -275,6 +323,15 @@ export const getWorkspaces = async (req, res) => {
     }
 };
 
+/**
+ * Get a single workspace by slug with user's role and member count
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.slug - Workspace slug
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with workspace details or error
+ */
 export const getWorkspace = async (req, res) => {
     const {slug} = req.params;
     const userId = req.user.id;
@@ -321,6 +378,18 @@ export const getWorkspace = async (req, res) => {
     }
 };
 
+/**
+ * Get team members of a workspace with pagination
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.slug - Workspace slug
+ * @param {Object} req.query - Query parameters for pagination
+ * @param {number} [req.query.page] - Page number for pagination
+ * @param {number} [req.query.limit] - Number of items per page
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with paginated team members or error
+ */
 export const getWorkspaceTeam = async (req, res) => {
     const {page, limit, offset} = getPaginationParams(req.query);
     const {slug} = req.params;
