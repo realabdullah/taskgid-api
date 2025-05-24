@@ -14,6 +14,8 @@ import WorkspaceActivity from './WorkspaceActivity.js';
 import TaskAssignee from './TaskAssignee.js';
 import CommentLike from './CommentLike.js';
 import TwoFactorAuth from './TwoFactorAuth.js';
+import Tag from './Tag.js';
+import TaskTag from './TaskTag.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -34,6 +36,7 @@ Workspace.hasMany(WorkspaceTeam, {foreignKey: 'workspaceId', as: 'teamMembership
 Workspace.hasMany(Task, {foreignKey: 'workspaceId', as: 'tasks'});
 Workspace.hasMany(Invite, {foreignKey: 'workspaceId', as: 'invites'});
 Workspace.hasMany(WorkspaceActivity, {foreignKey: 'workspaceId', as: 'activities'});
+Workspace.hasMany(Tag, {foreignKey: 'workspaceId', as: 'tags'});
 
 // WorkspaceTeam associations
 WorkspaceTeam.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
@@ -46,6 +49,7 @@ Task.belongsToMany(User, {through: TaskAssignee, as: 'assignees', foreignKey: 't
 Task.hasMany(Comment, {foreignKey: 'taskId', as: 'comments'});
 Task.hasMany(Attachment, {foreignKey: 'taskId', as: 'attachments'});
 Task.hasMany(TaskActivity, {foreignKey: 'taskId', as: 'activities'});
+Task.belongsToMany(Tag, {through: TaskTag, as: 'tags', foreignKey: 'taskId'});
 
 // Comment associations
 Comment.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
@@ -85,6 +89,15 @@ CommentLike.belongsTo(User, {foreignKey: 'userId', as: 'userRef'});
 
 // TwoFactorAuth associations
 TwoFactorAuth.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+
+// Tag associations
+Tag.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+Tag.belongsTo(User, {foreignKey: 'createdById', as: 'creator'});
+Tag.belongsToMany(Task, {through: TaskTag, as: 'tasks', foreignKey: 'tagId'});
+
+// TaskTag associations
+TaskTag.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
+TaskTag.belongsTo(Tag, {foreignKey: 'tagId', as: 'tag'});
 
 /**
  * Sets up all model associations

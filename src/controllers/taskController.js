@@ -3,6 +3,8 @@ import Task from '../models/Task.js';
 import User from '../models/User.js';
 import {Workspace} from '../models/Workspace.js';
 import TaskAssignee from '../models/TaskAssignee.js';
+import Tag from '../models/Tag.js';
+import TaskTag from '../models/TaskTag.js';
 import {logWorkspaceActivity, logTaskActivity} from '../utils/activityLogger.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
 import notificationService from '../services/notificationService.js';
@@ -68,6 +70,26 @@ const parseQueryArray = (queryParam) => {
 };
 
 /**
+ * Get tag IDs by tag names within a workspace
+ * @param {Array<string>} tagNames - Array of tag names
+ * @param {string} workspaceId - Workspace ID
+ * @return {Promise<Array<string>>} - Array of tag IDs
+ */
+const getTagIds = async (tagNames, workspaceId) => {
+    if (!tagNames || !tagNames.length) return [];
+
+    const tags = await Tag.findAll({
+        where: {
+            name: {[Op.in]: tagNames},
+            workspaceId,
+        },
+        attributes: ['id'],
+    });
+
+    return tags.map((tag) => tag.id);
+};
+
+/**
  * Create a new task in the specified workspace
  * @param {Object} req - Express request object
  * @param {Object} req.params - Request parameters
@@ -79,6 +101,7 @@ const parseQueryArray = (queryParam) => {
  * @param {string} req.body.priority - Task priority
  * @param {string} req.body.dueDate - Task due date
  * @param {Array<string>} req.body.assignees - Array of assignee usernames
+ * @param {Array<string>} [req.body.tags] - Array of tag names
  * @param {Object} req.user - Authenticated user
  * @param {Object} res - Express response object
  * @return {Object} Response with created task data or error
@@ -88,8 +111,9 @@ export const addTask = async (req, res) => {
         const {workspaceSlug} = req.params;
         const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-        const {title, description, status, priority, dueDate, assignees} = req.body;
+        const {title, description, status, priority, dueDate, assignees, tags} = req.body;
         const assigneeIds = await getAssignees(assignees);
+        const tagIds = await getTagIds(tags, workspaceId);
 
         const task = await Task.create({
             title,
@@ -121,6 +145,17 @@ export const addTask = async (req, res) => {
             );
         }
 
+        if (tagIds.length > 0) {
+            const tagEntries = tagIds.map((tagId) => ({
+                taskId: task.id,
+                tagId,
+            }));
+            await TaskTag.bulkCreate(tagEntries);
+
+            const meta = {taskId: task.id, taskTitle: task.title, tagIds};
+            await logTaskActivity(task.id, req.user.id, 'tags_added', meta);
+        }
+
         await logTaskActivity(task.id, req.user.id, 'created', {taskTitle: task.title});
         await logWorkspaceActivity(
             workspaceId,
@@ -141,6 +176,12 @@ export const addTask = async (req, res) => {
                     model: User,
                     as: 'creator',
                     attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                },
+                {
+                    model: Tag,
+                    as: 'tags',
+                    attributes: ['id', 'name', 'color'],
+                    through: {attributes: []},
                 },
             ],
             attributes: {
@@ -172,6 +213,7 @@ export const addTask = async (req, res) => {
  * @param {string} [req.body.priority] - Updated task priority
  * @param {string} [req.body.dueDate] - Updated task due date
  * @param {Array<string>} [req.body.assignees] - Updated array of assignee usernames
+ * @param {Array<string>} [req.body.tags] - Updated array of tag names
  * @param {Object} req.user - Authenticated user
  * @param {Object} res - Express response object
  * @return {Object} Response with updated task data or error
@@ -183,17 +225,25 @@ export const updateTask = async (req, res) => {
 
         const updateData = req.body;
         const newAssigneeIds = updateData.assignees ? await getAssignees(updateData.assignees) : undefined;
+        const newTagIds = updateData.tags ? await getTagIds(updateData.tags, workspaceId) : undefined;
 
         const task = await Task.findOne({
             where: {
                 id: taskId,
                 workspaceId,
             },
-            include: [{
-                model: User,
-                as: 'assignees',
-                attributes: ['id'],
-            }],
+            include: [
+                {
+                    model: User,
+                    as: 'assignees',
+                    attributes: ['id'],
+                },
+                {
+                    model: Tag,
+                    as: 'tags',
+                    attributes: ['id'],
+                },
+            ],
         });
 
         if (!task) {
@@ -202,6 +252,7 @@ export const updateTask = async (req, res) => {
 
         const originalData = task.get({plain: true});
         const originalAssigneeIds = originalData.assignees.map((assignee) => assignee.id);
+        const originalTagIds = originalData.tags.map((tag) => tag.id);
 
         const allowedFields = ['title', 'description', 'status', 'priority', 'dueDate'];
         const updatePayload = {};
@@ -311,6 +362,25 @@ export const updateTask = async (req, res) => {
             }
         }
 
+        // Handle tag updates
+        if (newTagIds !== undefined) {
+            const removedTagIds = originalTagIds.filter((id) => !newTagIds.includes(id));
+            const addedTagIds = newTagIds.filter((id) => !originalTagIds.includes(id));
+
+            if (removedTagIds.length > 0) {
+                await TaskTag.destroy({where: {taskId: task.id, tagId: {[Op.in]: removedTagIds}}});
+                const meta = {taskId: task.id, taskTitle: task.title, removedTagIds};
+                await logTaskActivity(task.id, req.user.id, 'tags_removed', meta);
+            }
+
+            if (addedTagIds.length > 0) {
+                const newTagEntries = addedTagIds.map((tagId) => ({taskId: task.id, tagId}));
+                await TaskTag.bulkCreate(newTagEntries);
+                const meta = {taskId: task.id, taskTitle: task.title, addedTagIds};
+                await logTaskActivity(task.id, req.user.id, 'tags_added', meta);
+            }
+        }
+
         const updatedTask = await Task.findByPk(task.id, {
             include: [
                 {
@@ -320,6 +390,12 @@ export const updateTask = async (req, res) => {
                     through: {attributes: []},
                 },
                 {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+                {
+                    model: Tag,
+                    as: 'tags',
+                    attributes: ['id', 'name', 'color'],
+                    through: {attributes: []},
+                },
             ],
             attributes: {
                 include: [
@@ -364,6 +440,12 @@ export const fetchWorkspaceTask = async (req, res) => {
                     through: {attributes: []},
                 },
                 {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+                {
+                    model: Tag,
+                    as: 'tags',
+                    attributes: ['id', 'name', 'color'],
+                    through: {attributes: []},
+                },
             ],
             attributes: {
                 include: [
@@ -429,6 +511,7 @@ export const deleteTask = async (req, res) => {
  * @param {string} [req.query.assignee] - Filter by assignee (can be 'me' or 'unassigned')
  * @param {string|Array<string>} [req.query.status] - Filter by status
  * @param {string|Array<string>} [req.query.priority] - Filter by priority
+ * @param {string|Array<string>} [req.query.tags] - Filter by tag names
  * @param {number} [req.query.page] - Page number for pagination
  * @param {number} [req.query.limit] - Number of items per page
  * @param {Object} req.user - Authenticated user
@@ -443,6 +526,7 @@ export const fetchWorkspaceTasks = async (req, res) => {
         const {search, assignee} = req.query;
         const statusFilter = parseQueryArray(req.query.status);
         const priorityFilter = parseQueryArray(req.query.priority);
+        const tagsFilter = parseQueryArray(req.query.tags);
         const currentUserId = req.user?.id;
         if (assignee === 'me' && !currentUserId) {
             return errorResponse(res, 401, 'Authentication required to filter by tasks assigned to you.');
@@ -461,6 +545,13 @@ export const fetchWorkspaceTasks = async (req, res) => {
                 required: false,
             },
             {model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture']},
+            {
+                model: Tag,
+                as: 'tags',
+                attributes: ['id', 'name', 'color'],
+                through: {attributes: []},
+                required: false,
+            },
         ];
 
         if (search) {
@@ -480,6 +571,14 @@ export const fetchWorkspaceTasks = async (req, res) => {
             const validPriorities = ['low', 'medium', 'high'];
             const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
             if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        if (tagsFilter && tagsFilter.length > 0) {
+            const tagsInclude = includeConditions.find((inc) => inc.as === 'tags');
+            if (tagsInclude) {
+                tagsInclude.where = {name: {[Op.in]: tagsFilter}};
+                tagsInclude.required = true;
+            }
         }
 
         if (assignee) {
@@ -672,6 +771,7 @@ export const batchAssignTasks = async (req, res) => {
  * @param {string} [req.query.assignee] - Filter by assignee username or 'me' or 'unassigned'
  * @param {string|Array<string>} [req.query.status] - Filter by status
  * @param {string|Array<string>} [req.query.priority] - Filter by priority
+ * @param {string|Array<string>} [req.query.tags] - Filter by tag names
  * @param {string} [req.query.creator] - Filter by task creator username
  * @param {string} [req.query.dueDateFrom] - Filter tasks due after this date (ISO string)
  * @param {string} [req.query.dueDateTo] - Filter tasks due before this date (ISO string)
@@ -706,6 +806,7 @@ export const advancedSearchTasks = async (req, res) => {
 
         const statusFilter = parseQueryArray(req.query.status);
         const priorityFilter = parseQueryArray(req.query.priority);
+        const tagsFilter = parseQueryArray(req.query.tags);
         const currentUserId = req.user?.id;
 
         if (assignee === 'me' && !currentUserId) {
@@ -727,6 +828,13 @@ export const advancedSearchTasks = async (req, res) => {
                 model: User,
                 as: 'creator',
                 attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            },
+            {
+                model: Tag,
+                as: 'tags',
+                attributes: ['id', 'name', 'color'],
+                through: {attributes: []},
+                required: false,
             },
         ];
 
@@ -764,6 +872,15 @@ export const advancedSearchTasks = async (req, res) => {
             const validPriorities = ['low', 'medium', 'high'];
             const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
             if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        // Tag filtering
+        if (tagsFilter && tagsFilter.length > 0) {
+            const tagsInclude = includeConditions.find((inc) => inc.as === 'tags');
+            if (tagsInclude) {
+                tagsInclude.where = {name: {[Op.in]: tagsFilter}};
+                tagsInclude.required = true;
+            }
         }
 
         // Creator filtering
@@ -847,6 +964,7 @@ export const advancedSearchTasks = async (req, res) => {
             filters: {
                 status: statusFilter,
                 priority: priorityFilter,
+                tags: tagsFilter,
                 assignee,
                 creator,
                 dueDateRange: dueDateFrom || dueDateTo ? {from: dueDateFrom, to: dueDateTo} : null,
@@ -894,6 +1012,7 @@ export const exportTasksCSV = async (req, res) => {
 
         const statusFilter = parseQueryArray(req.query.status);
         const priorityFilter = parseQueryArray(req.query.priority);
+        const tagsFilter = parseQueryArray(req.query.tags);
         const currentUserId = req.user?.id;
 
         const whereConditions = {workspaceId};
@@ -909,6 +1028,13 @@ export const exportTasksCSV = async (req, res) => {
                 model: User,
                 as: 'creator',
                 attributes: ['username', 'firstName', 'lastName'],
+            },
+            {
+                model: Tag,
+                as: 'tags',
+                attributes: ['name', 'color'],
+                through: {attributes: []},
+                required: false,
             },
         ];
 
@@ -984,10 +1110,11 @@ export const exportTasksCSV = async (req, res) => {
 
         // Convert tasks to CSV format
         const csvHeader =
-        'ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Comment Count,Created At,Updated At\n';
+        'ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Tags,Comment Count,Created At,Updated At\n';
         const csvRows = tasks.map((task) => {
             const assignees = task.assignees.map((a) => `${a.firstName} ${a.lastName} (${a.username})`).join('; ');
             const creator = `${task.creator.firstName} ${task.creator.lastName} (${task.creator.username})`;
+            const tags = task.tags.map((t) => t.name).join('; ');
 
             return [
                 task.id,
@@ -998,6 +1125,7 @@ export const exportTasksCSV = async (req, res) => {
                 task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
                 `"${creator}"`,
                 `"${assignees}"`,
+                `"${tags}"`,
                 task.dataValues.commentCount || 0,
                 new Date(task.createdAt).toISOString(),
                 new Date(task.updatedAt).toISOString(),
@@ -1053,6 +1181,7 @@ export const exportTasksPDF = async (req, res) => {
 
         const statusFilter = parseQueryArray(req.query.status);
         const priorityFilter = parseQueryArray(req.query.priority);
+        const tagsFilter = parseQueryArray(req.query.tags);
         const currentUserId = req.user?.id;
 
         const whereConditions = {workspaceId};
@@ -1068,6 +1197,13 @@ export const exportTasksPDF = async (req, res) => {
                 model: User,
                 as: 'creator',
                 attributes: ['username', 'firstName', 'lastName'],
+            },
+            {
+                model: Tag,
+                as: 'tags',
+                attributes: ['name', 'color'],
+                through: {attributes: []},
+                required: false,
             },
         ];
 
@@ -1089,6 +1225,14 @@ export const exportTasksPDF = async (req, res) => {
             const validPriorities = ['low', 'medium', 'high'];
             const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
             if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        if (tagsFilter && tagsFilter.length > 0) {
+            const tagsInclude = includeConditions.find((inc) => inc.as === 'tags');
+            if (tagsInclude) {
+                tagsInclude.where = {name: {[Op.in]: tagsFilter}};
+                tagsInclude.required = true;
+            }
         }
 
         if (creator) {
@@ -1171,7 +1315,15 @@ export const exportTasksPDF = async (req, res) => {
                 .task-title { font-weight: bold; font-size: 16px; color: #1f2937; }
                 .task-meta { font-size: 12px; color: #6b7280; }
                 .status,
-                .priority { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; color: white; }
+                .priority,
+                .tag { 
+                    padding: 4px 8px; 
+                    border-radius: 4px; 
+                    font-size: 12px; 
+                    font-weight: bold; 
+                    color: white; 
+                    margin-right: 4px; 
+                }
                 .description { margin: 10px 0; color: #4b5563; }
                 .assignees { font-size: 14px; color: #6b7280; }
                 .footer { margin-top: 30px; text-align: center; color: #9ca3af; font-size: 12px; }
@@ -1191,6 +1343,9 @@ export const exportTasksPDF = async (req, res) => {
             ${tasks.map((task) => {
         const assignees = task.assignees.map((a) => `${a.firstName} ${a.lastName}`).join(', ') || 'Unassigned';
         const creator = `${task.creator.firstName} ${task.creator.lastName}`;
+        const tags = task.tags.map((tag) =>
+            `<span class="tag" style="background-color: ${tag.color}">${tag.name}</span>`,
+        ).join('');
 
         return `
                 <div class="task">
@@ -1205,13 +1360,14 @@ export const exportTasksPDF = async (req, res) => {
                         <span class="priority" style="background-color: ${priorityColors[task.priority]}">
                             ${task.priority.toUpperCase()}
                         </span>
+                        ${tags}
                     </div>
                     ${task.description ? `<div class="description">${task.description}</div>` : ''}
                     <div class="assignees"><strong>Assignees:</strong> ${assignees}</div>
                     <div class="assignees"><strong>Creator:</strong> ${creator}</div>
                     <div class="assignees">
-                        <strong>Due Date:</strong> $
-                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}
+                        <strong>Due Date:</strong> 
+                        ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}
                     </div>
                     <div class="assignees"><strong>Comments:</strong> ${task.dataValues.commentCount || 0}</div>
                     <div class="assignees">

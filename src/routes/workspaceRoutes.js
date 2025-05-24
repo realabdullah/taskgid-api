@@ -22,6 +22,7 @@ import {
 } from '../controllers/statisticsController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateWorkspaceInput} from '../middleware/validationMiddleware.js';
+import tagRoutes from './tagRoutes.js';
 
 const router = new express.Router();
 
@@ -37,6 +38,9 @@ router.put('/:slug', validateWorkspaceInput, updateWorkspace);
 router.delete('/:slug', deleteWorkspace);
 router.get('/:slug/activities', getWorkspaceActivities);
 router.get('/:slug/export/csv', exportWorkspaceDataCSV);
+
+// --- Tag Management (by Workspace Slug) ---
+router.use('/:workspaceSlug/tags', tagRoutes);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', getWorkspaceTeam);
