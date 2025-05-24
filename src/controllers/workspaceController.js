@@ -1328,3 +1328,208 @@ export const getTeamStatistics = async (req, res) => {
         return errorResponse(res, 500, 'Failed to fetch team statistics');
     }
 };
+
+/**
+ * Export comprehensive workspace data to CSV format
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.slug - Workspace slug
+ * @param {Object} req.query - Query parameters
+ * @param {boolean} [req.query.includeTasks=true] - Include tasks in export
+ * @param {boolean} [req.query.includeMembers=true] - Include team members in export
+ * @param {boolean} [req.query.includeActivities=false] - Include activities in export
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} CSV file download or error
+ */
+export const exportWorkspaceDataCSV = async (req, res) => {
+    try {
+        const {slug} = req.params;
+        const {
+            includeTasks = 'true',
+            includeMembers = 'true',
+            includeActivities = 'false',
+        } = req.query;
+
+        const {workspace, error} = await findWorkspaceBySlugAndCheckAccess(slug, req.user.id);
+        if (error) return errorResponse(res, error.status, error.message);
+
+        let csvContent = '';
+        const timestamp = new Date().toISOString().split('T')[0];
+
+        // Workspace overview
+        csvContent += `Workspace Export Report\n`;
+        csvContent += `Workspace,${workspace.title}\n`;
+        csvContent += `Description,"${(workspace.description || '').replace(/"/g, '""')}"\n`;
+        csvContent += `Generated,${new Date().toISOString()}\n\n`;
+
+        // Include tasks if requested
+        if (includeTasks === 'true') {
+            csvContent += `TASKS\n`;
+            csvContent +=
+            `ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Comment Count,Created At,Updated At\n`;
+
+            const tasks = await Task.findAll({
+                where: {workspaceId: workspace.id},
+                include: [
+                    {
+                        model: User,
+                        as: 'assignees',
+                        attributes: ['username', 'firstName', 'lastName'],
+                        through: {attributes: []},
+                    },
+                    {
+                        model: User,
+                        as: 'creator',
+                        attributes: ['username', 'firstName', 'lastName'],
+                    },
+                ],
+                order: [['createdAt', 'DESC']],
+                attributes: {
+                    include: [
+                        [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                            'commentCount'],
+                    ],
+                },
+            });
+
+            tasks.forEach((task) => {
+                const assignees = task.assignees.map((a) => `${a.firstName} ${a.lastName} (${a.username})`).join('; ');
+                const creator = `${task.creator.firstName} ${task.creator.lastName} (${task.creator.username})`;
+
+                csvContent += [
+                    task.id,
+                    `"${task.title.replace(/"/g, '""')}"`,
+                    `"${(task.description || '').replace(/"/g, '""')}"`,
+                    task.status,
+                    task.priority,
+                    task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
+                    `"${creator}"`,
+                    `"${assignees}"`,
+                    task.dataValues.commentCount || 0,
+                    new Date(task.createdAt).toISOString(),
+                    new Date(task.updatedAt).toISOString(),
+                ].join(',') + '\n';
+            });
+
+            csvContent += '\n';
+        }
+
+        // Include team members if requested
+        if (includeMembers === 'true') {
+            csvContent += `TEAM MEMBERS\n`;
+            csvContent +=
+            `Username,First Name,Last Name,Email,Role,Title,Location,Date Joined,Task Count,Completed Tasks\n`;
+
+            const teamMembers = await WorkspaceTeam.findAll({
+                where: {workspaceId: workspace.id},
+                include: [{
+                    model: User,
+                    as: 'memberDetail',
+                    attributes: ['username', 'firstName', 'lastName', 'email', 'title', 'location'],
+                }],
+                order: [[{model: User, as: 'memberDetail'}, 'firstName', 'ASC']],
+            });
+
+            const memberIds = teamMembers.map((tm) => tm.userId);
+
+            // Get task counts for members
+            const taskCounts = await TaskAssignee.findAll({
+                attributes: [
+                    'userId',
+                    [Sequelize.fn('COUNT', Sequelize.col('task_id')), 'totalTasks'],
+                ],
+                where: {userId: {[Op.in]: memberIds}},
+                include: [{
+                    model: Task,
+                    as: 'task',
+                    attributes: [],
+                    where: {workspaceId: workspace.id},
+                    required: true,
+                }],
+                group: ['userId'],
+                raw: true,
+            });
+
+            const completedTaskCounts = await TaskAssignee.findAll({
+                attributes: [
+                    'userId',
+                    [Sequelize.fn('COUNT', Sequelize.col('task_id')), 'completedTasks'],
+                ],
+                where: {userId: {[Op.in]: memberIds}},
+                include: [{
+                    model: Task,
+                    as: 'task',
+                    attributes: [],
+                    where: {workspaceId: workspace.id, status: 'done'},
+                    required: true,
+                }],
+                group: ['userId'],
+                raw: true,
+            });
+
+            const taskCountMap = new Map(taskCounts.map((tc) => [tc.userId, parseInt(tc.totalTasks, 10)]));
+            const completedCountMap = new Map(
+                completedTaskCounts.map((tc) => [tc.userId, parseInt(tc.completedTasks, 10)]),
+            );
+
+            teamMembers.forEach((member) => {
+                const user = member.memberDetail;
+                const taskCount = taskCountMap.get(member.userId) || 0;
+                const completedCount = completedCountMap.get(member.userId) || 0;
+
+                csvContent += [
+                    user.username,
+                    `"${user.firstName}"`,
+                    `"${user.lastName}"`,
+                    user.email,
+                    member.role,
+                    `"${user.title || ''}"`,
+                    `"${user.location || ''}"`,
+                    new Date(member.createdAt).toISOString().split('T')[0],
+                    taskCount,
+                    completedCount,
+                ].join(',') + '\n';
+            });
+
+            csvContent += '\n';
+        }
+
+        // Include activities if requested
+        if (includeActivities === 'true') {
+            csvContent += `RECENT ACTIVITIES\n`;
+            csvContent += `Date,User,Action,Details\n`;
+
+            const activities = await WorkspaceActivity.findAll({
+                where: {workspaceId: workspace.id},
+                include: [{
+                    model: User,
+                    as: 'user',
+                    attributes: ['username', 'firstName', 'lastName'],
+                }],
+                order: [['createdAt', 'DESC']],
+                limit: 100, // Limit to recent 100 activities
+            });
+
+            activities.forEach((activity) => {
+                const user = `${activity.user.firstName} ${activity.user.lastName} (${activity.user.username})`;
+                const details = JSON.stringify(activity.details || {}).replace(/"/g, '""');
+
+                csvContent += [
+                    new Date(activity.createdAt).toISOString(),
+                    `"${user}"`,
+                    activity.action,
+                    `"${details}"`,
+                ].join(',') + '\n';
+            });
+        }
+
+        const filename = `workspace-${slug}-${timestamp}.csv`;
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csvContent);
+    } catch (error) {
+        console.error('Export Workspace CSV Error:', error);
+        return errorResponse(res, 500, 'Failed to export workspace data');
+    }
+};

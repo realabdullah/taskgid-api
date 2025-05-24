@@ -15,6 +15,7 @@ import {
     getUserTasks,
     getUserWorkspaceActivities,
     getTeamStatistics,
+    exportWorkspaceDataCSV,
 } from '../controllers/workspaceController.js';
 import {
     getWorkspaceStatistics,
@@ -35,6 +36,7 @@ router.get('/:slug', getWorkspace);
 router.put('/:slug', validateWorkspaceInput, updateWorkspace);
 router.delete('/:slug', deleteWorkspace);
 router.get('/:slug/activities', getWorkspaceActivities);
+router.get('/:slug/export/csv', exportWorkspaceDataCSV);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', getWorkspaceTeam);

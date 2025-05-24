@@ -7,6 +7,9 @@ import {
     fetchWorkspaceTasks,
     getTaskActivities,
     batchAssignTasks,
+    advancedSearchTasks,
+    exportTasksCSV,
+    exportTasksPDF,
 } from '../controllers/taskController.js';
 import {
     getTaskComments,
@@ -33,6 +36,9 @@ router.use(authMiddleware);
 
 // Task routes
 router.get('/', checkMemberMiddleware, fetchWorkspaceTasks);
+router.get('/search', checkMemberMiddleware, advancedSearchTasks);
+router.get('/export/csv', checkMemberMiddleware, exportTasksCSV);
+router.get('/export/pdf', checkMemberMiddleware, exportTasksPDF);
 router.get('/:id', checkMemberMiddleware, fetchWorkspaceTask);
 router.get('/:id/activities', checkMemberMiddleware, getTaskActivities);
 

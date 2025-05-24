@@ -661,3 +661,585 @@ export const batchAssignTasks = async (req, res) => {
         return errorResponse(res, statusCode, error.message || 'Failed to assign tasks');
     }
 };
+
+/**
+ * Advanced search and filtering for workspace tasks
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.query - Query parameters for advanced filtering
+ * @param {string} [req.query.search] - Search term for task title, description, and comments
+ * @param {string} [req.query.assignee] - Filter by assignee username or 'me' or 'unassigned'
+ * @param {string|Array<string>} [req.query.status] - Filter by status
+ * @param {string|Array<string>} [req.query.priority] - Filter by priority
+ * @param {string} [req.query.creator] - Filter by task creator username
+ * @param {string} [req.query.dueDateFrom] - Filter tasks due after this date (ISO string)
+ * @param {string} [req.query.dueDateTo] - Filter tasks due before this date (ISO string)
+ * @param {string} [req.query.createdFrom] - Filter tasks created after this date (ISO string)
+ * @param {string} [req.query.createdTo] - Filter tasks created before this date (ISO string)
+ * @param {string} [req.query.sortBy] - Sort by field (title, dueDate, priority, createdAt, updatedAt)
+ * @param {string} [req.query.sortOrder] - Sort order (ASC or DESC)
+ * @param {boolean} [req.query.includeComments] - Include comment content in search
+ * @param {number} [req.query.page] - Page number for pagination
+ * @param {number} [req.query.limit] - Number of items per page
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} Response with paginated and filtered tasks or error
+ */
+export const advancedSearchTasks = async (req, res) => {
+    try {
+        const {workspaceSlug} = req.params;
+        const {page, limit, offset} = getPaginationParams(req.query);
+
+        const {
+            search,
+            assignee,
+            creator,
+            dueDateFrom,
+            dueDateTo,
+            createdFrom,
+            createdTo,
+            sortBy = 'createdAt',
+            sortOrder = 'DESC',
+            includeComments = false,
+        } = req.query;
+
+        const statusFilter = parseQueryArray(req.query.status);
+        const priorityFilter = parseQueryArray(req.query.priority);
+        const currentUserId = req.user?.id;
+
+        if (assignee === 'me' && !currentUserId) {
+            return errorResponse(res, 401, 'Authentication required to filter by tasks assigned to you.');
+        }
+
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+
+        const whereConditions = {workspaceId};
+        const includeConditions = [
+            {
+                model: User,
+                as: 'assignees',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+                through: {attributes: []},
+                required: false,
+            },
+            {
+                model: User,
+                as: 'creator',
+                attributes: ['id', 'username', 'firstName', 'lastName', 'profilePicture'],
+            },
+        ];
+
+        // Enhanced search across multiple fields
+        if (search) {
+            const searchConditions = [
+                {title: {[Op.iLike]: `%${search}%`}},
+                {description: {[Op.iLike]: `%${search}%`}},
+            ];
+
+            // Include comment search if requested
+            if (includeComments) {
+                includeConditions.push({
+                    model: sequelize.models.Comment,
+                    as: 'comments',
+                    attributes: [],
+                    where: {content: {[Op.iLike]: `%${search}%`}},
+                    required: false,
+                });
+                searchConditions.push({'$comments.content$': {[Op.iLike]: `%${search}%`}});
+            }
+
+            whereConditions[Op.or] = searchConditions;
+        }
+
+        // Status filtering
+        if (statusFilter && statusFilter.length > 0) {
+            const validStatuses = ['todo', 'in_progress', 'done'];
+            const filteredStatuses = statusFilter.filter((s) => validStatuses.includes(s));
+            if (filteredStatuses.length > 0) whereConditions.status = {[Op.in]: filteredStatuses};
+        }
+
+        // Priority filtering
+        if (priorityFilter && priorityFilter.length > 0) {
+            const validPriorities = ['low', 'medium', 'high'];
+            const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
+            if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        // Creator filtering
+        if (creator) {
+            const creatorUser = await User.findOne({where: {username: creator}, attributes: ['id']});
+            if (creatorUser) {
+                whereConditions.createdById = creatorUser.id;
+            } else {
+                return errorResponse(res, 404, 'Creator user not found');
+            }
+        }
+
+        // Assignee filtering
+        if (assignee) {
+            const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+            if (assigneesInclude) {
+                if (assignee === 'me') {
+                    assigneesInclude.where = {id: currentUserId};
+                    assigneesInclude.required = true;
+                } else if (assignee === 'unassigned') {
+                    whereConditions['$assignees.id$'] = {[Op.is]: null};
+                    assigneesInclude.required = false;
+                } else {
+                    const assigneeUser = await User.findOne({where: {username: assignee}, attributes: ['id']});
+                    if (assigneeUser) {
+                        assigneesInclude.where = {id: assigneeUser.id};
+                        assigneesInclude.required = true;
+                    } else {
+                        return errorResponse(res, 404, 'Assignee user not found');
+                    }
+                }
+            }
+        }
+
+        // Date range filtering
+        if (dueDateFrom || dueDateTo) {
+            const dueDateConditions = {};
+            if (dueDateFrom) dueDateConditions[Op.gte] = new Date(dueDateFrom);
+            if (dueDateTo) dueDateConditions[Op.lte] = new Date(dueDateTo);
+            whereConditions.dueDate = dueDateConditions;
+        }
+
+        if (createdFrom || createdTo) {
+            const createdDateConditions = {};
+            if (createdFrom) createdDateConditions[Op.gte] = new Date(createdFrom);
+            if (createdTo) createdDateConditions[Op.lte] = new Date(createdTo);
+            whereConditions.createdAt = createdDateConditions;
+        }
+
+        // Sorting
+        const validSortFields = ['title', 'dueDate', 'priority', 'createdAt', 'updatedAt', 'status'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+        const {count, rows: tasks} = await Task.findAndCountAll({
+            where: whereConditions,
+            include: includeConditions,
+            limit,
+            offset,
+            order: [[sortField, order]],
+            distinct: true,
+            subQuery: false,
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
+        });
+
+        const response = createPaginatedResponse(
+            tasks,
+            count,
+            parseInt(page || 1),
+            parseInt(limit || 10),
+        );
+
+        // Add search metadata
+        response.searchMetadata = {
+            searchTerm: search,
+            filters: {
+                status: statusFilter,
+                priority: priorityFilter,
+                assignee,
+                creator,
+                dueDateRange: dueDateFrom || dueDateTo ? {from: dueDateFrom, to: dueDateTo} : null,
+                createdDateRange: createdFrom || createdTo ? {from: createdFrom, to: createdTo} : null,
+            },
+            sorting: {field: sortField, order},
+            includeComments: Boolean(includeComments),
+        };
+
+        return successResponse(res, response);
+    } catch (error) {
+        console.error('Advanced Search Tasks Error:', error);
+        const statusCode = error.status || 400;
+        return errorResponse(res, statusCode, error.message || 'Failed to search tasks');
+    }
+};
+
+/**
+ * Export workspace tasks to CSV format
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.query - Query parameters for filtering (same as advancedSearchTasks)
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} CSV file download or error
+ */
+export const exportTasksCSV = async (req, res) => {
+    try {
+        const {workspaceSlug} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+
+        // Use the same filtering logic as advanced search but without pagination
+        const {
+            search,
+            assignee,
+            creator,
+            dueDateFrom,
+            dueDateTo,
+            createdFrom,
+            createdTo,
+            sortBy = 'createdAt',
+            sortOrder = 'DESC',
+        } = req.query;
+
+        const statusFilter = parseQueryArray(req.query.status);
+        const priorityFilter = parseQueryArray(req.query.priority);
+        const currentUserId = req.user?.id;
+
+        const whereConditions = {workspaceId};
+        const includeConditions = [
+            {
+                model: User,
+                as: 'assignees',
+                attributes: ['username', 'firstName', 'lastName'],
+                through: {attributes: []},
+                required: false,
+            },
+            {
+                model: User,
+                as: 'creator',
+                attributes: ['username', 'firstName', 'lastName'],
+            },
+        ];
+
+        // Apply the same filtering logic as advancedSearchTasks
+        if (search) {
+            whereConditions[Op.or] = [
+                {title: {[Op.iLike]: `%${search}%`}},
+                {description: {[Op.iLike]: `%${search}%`}},
+            ];
+        }
+
+        if (statusFilter && statusFilter.length > 0) {
+            const validStatuses = ['todo', 'in_progress', 'done'];
+            const filteredStatuses = statusFilter.filter((s) => validStatuses.includes(s));
+            if (filteredStatuses.length > 0) whereConditions.status = {[Op.in]: filteredStatuses};
+        }
+
+        if (priorityFilter && priorityFilter.length > 0) {
+            const validPriorities = ['low', 'medium', 'high'];
+            const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
+            if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        if (creator) {
+            const creatorUser = await User.findOne({where: {username: creator}, attributes: ['id']});
+            if (creatorUser) whereConditions.createdById = creatorUser.id;
+        }
+
+        if (assignee && assignee !== 'me' && assignee !== 'unassigned') {
+            const assigneeUser = await User.findOne({where: {username: assignee}, attributes: ['id']});
+            if (assigneeUser) {
+                const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+                assigneesInclude.where = {id: assigneeUser.id};
+                assigneesInclude.required = true;
+            }
+        } else if (assignee === 'me') {
+            const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+            assigneesInclude.where = {id: currentUserId};
+            assigneesInclude.required = true;
+        } else if (assignee === 'unassigned') {
+            whereConditions['$assignees.id$'] = {[Op.is]: null};
+        }
+
+        if (dueDateFrom || dueDateTo) {
+            const dueDateConditions = {};
+            if (dueDateFrom) dueDateConditions[Op.gte] = new Date(dueDateFrom);
+            if (dueDateTo) dueDateConditions[Op.lte] = new Date(dueDateTo);
+            whereConditions.dueDate = dueDateConditions;
+        }
+
+        if (createdFrom || createdTo) {
+            const createdDateConditions = {};
+            if (createdFrom) createdDateConditions[Op.gte] = new Date(createdFrom);
+            if (createdTo) createdDateConditions[Op.lte] = new Date(createdTo);
+            whereConditions.createdAt = createdDateConditions;
+        }
+
+        const validSortFields = ['title', 'dueDate', 'priority', 'createdAt', 'updatedAt', 'status'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+        const tasks = await Task.findAll({
+            where: whereConditions,
+            include: includeConditions,
+            order: [[sortField, order]],
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
+        });
+
+        // Convert tasks to CSV format
+        const csvHeader =
+        'ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Comment Count,Created At,Updated At\n';
+        const csvRows = tasks.map((task) => {
+            const assignees = task.assignees.map((a) => `${a.firstName} ${a.lastName} (${a.username})`).join('; ');
+            const creator = `${task.creator.firstName} ${task.creator.lastName} (${task.creator.username})`;
+
+            return [
+                task.id,
+                `"${task.title.replace(/"/g, '""')}"`,
+                `"${(task.description || '').replace(/"/g, '""')}"`,
+                task.status,
+                task.priority,
+                task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '',
+                `"${creator}"`,
+                `"${assignees}"`,
+                task.dataValues.commentCount || 0,
+                new Date(task.createdAt).toISOString(),
+                new Date(task.updatedAt).toISOString(),
+            ].join(',');
+        }).join('\n');
+
+        const csvContent = csvHeader + csvRows;
+        const timestamp = new Date().toISOString().split('T')[0];
+        const filename = `tasks-${workspaceSlug}-${timestamp}.csv`;
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csvContent);
+    } catch (error) {
+        console.error('Export Tasks CSV Error:', error);
+        const statusCode = error.status || 500;
+        return errorResponse(res, statusCode, error.message || 'Failed to export tasks to CSV');
+    }
+};
+
+/**
+ * Export workspace tasks to PDF format
+ * @param {Object} req - Express request object
+ * @param {Object} req.params - Request parameters
+ * @param {string} req.params.workspaceSlug - Workspace slug
+ * @param {Object} req.query - Query parameters for filtering
+ * @param {Object} req.user - Authenticated user
+ * @param {Object} res - Express response object
+ * @return {Object} PDF file download or error
+ */
+export const exportTasksPDF = async (req, res) => {
+    try {
+        const {workspaceSlug} = req.params;
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+
+        // Get workspace details
+        const workspace = await Workspace.findByPk(workspaceId, {
+            attributes: ['title', 'description'],
+        });
+
+        // Use same filtering logic as CSV export
+        const {
+            search,
+            assignee,
+            creator,
+            dueDateFrom,
+            dueDateTo,
+            createdFrom,
+            createdTo,
+            sortBy = 'createdAt',
+            sortOrder = 'DESC',
+        } = req.query;
+
+        const statusFilter = parseQueryArray(req.query.status);
+        const priorityFilter = parseQueryArray(req.query.priority);
+        const currentUserId = req.user?.id;
+
+        const whereConditions = {workspaceId};
+        const includeConditions = [
+            {
+                model: User,
+                as: 'assignees',
+                attributes: ['username', 'firstName', 'lastName'],
+                through: {attributes: []},
+                required: false,
+            },
+            {
+                model: User,
+                as: 'creator',
+                attributes: ['username', 'firstName', 'lastName'],
+            },
+        ];
+
+        // Apply filtering (same as CSV)
+        if (search) {
+            whereConditions[Op.or] = [
+                {title: {[Op.iLike]: `%${search}%`}},
+                {description: {[Op.iLike]: `%${search}%`}},
+            ];
+        }
+
+        if (statusFilter && statusFilter.length > 0) {
+            const validStatuses = ['todo', 'in_progress', 'done'];
+            const filteredStatuses = statusFilter.filter((s) => validStatuses.includes(s));
+            if (filteredStatuses.length > 0) whereConditions.status = {[Op.in]: filteredStatuses};
+        }
+
+        if (priorityFilter && priorityFilter.length > 0) {
+            const validPriorities = ['low', 'medium', 'high'];
+            const filteredPriorities = priorityFilter.filter((p) => validPriorities.includes(p));
+            if (filteredPriorities.length > 0) whereConditions.priority = {[Op.in]: filteredPriorities};
+        }
+
+        if (creator) {
+            const creatorUser = await User.findOne({where: {username: creator}, attributes: ['id']});
+            if (creatorUser) whereConditions.createdById = creatorUser.id;
+        }
+
+        if (assignee && assignee !== 'me' && assignee !== 'unassigned') {
+            const assigneeUser = await User.findOne({where: {username: assignee}, attributes: ['id']});
+            if (assigneeUser) {
+                const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+                assigneesInclude.where = {id: assigneeUser.id};
+                assigneesInclude.required = true;
+            }
+        } else if (assignee === 'me') {
+            const assigneesInclude = includeConditions.find((inc) => inc.as === 'assignees');
+            assigneesInclude.where = {id: currentUserId};
+            assigneesInclude.required = true;
+        } else if (assignee === 'unassigned') {
+            whereConditions['$assignees.id$'] = {[Op.is]: null};
+        }
+
+        if (dueDateFrom || dueDateTo) {
+            const dueDateConditions = {};
+            if (dueDateFrom) dueDateConditions[Op.gte] = new Date(dueDateFrom);
+            if (dueDateTo) dueDateConditions[Op.lte] = new Date(dueDateTo);
+            whereConditions.dueDate = dueDateConditions;
+        }
+
+        if (createdFrom || createdTo) {
+            const createdDateConditions = {};
+            if (createdFrom) createdDateConditions[Op.gte] = new Date(createdFrom);
+            if (createdTo) createdDateConditions[Op.lte] = new Date(createdTo);
+            whereConditions.createdAt = createdDateConditions;
+        }
+
+        const validSortFields = ['title', 'dueDate', 'priority', 'createdAt', 'updatedAt', 'status'];
+        const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+        const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+        const tasks = await Task.findAll({
+            where: whereConditions,
+            include: includeConditions,
+            order: [[sortField, order]],
+            attributes: {
+                include: [
+                    [sequelize.literal('(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)'),
+                        'commentCount'],
+                ],
+            },
+        });
+
+        // Generate HTML content for PDF
+        const timestamp = new Date().toLocaleString();
+        const statusColors = {
+            'todo': '#6b7280',
+            'in_progress': '#f59e0b',
+            'done': '#10b981',
+        };
+        const priorityColors = {
+            'low': '#10b981',
+            'medium': '#f59e0b',
+            'high': '#ef4444',
+        };
+
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Tasks Report - ${workspace.title}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .header { border-bottom: 2px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }
+                .header h1 { color: #1f2937; margin: 0; }
+                .header .subtitle { color: #6b7280; margin-top: 5px; }
+                .stats { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+                .task { border: 1px solid #e5e7eb; margin-bottom: 15px; border-radius: 8px; padding: 15px; }
+                .task-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+                .task-title { font-weight: bold; font-size: 16px; color: #1f2937; }
+                .task-meta { font-size: 12px; color: #6b7280; }
+                .status,
+                .priority { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; color: white; }
+                .description { margin: 10px 0; color: #4b5563; }
+                .assignees { font-size: 14px; color: #6b7280; }
+                .footer { margin-top: 30px; text-align: center; color: #9ca3af; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Tasks Report</h1>
+                <div class="subtitle">Workspace: ${workspace.title}</div>
+                <div class="subtitle">Generated: ${timestamp}</div>
+            </div>
+            
+            <div class="stats">
+                <strong>Summary:</strong> ${tasks.length} tasks found
+            </div>
+
+            ${tasks.map((task) => {
+        const assignees = task.assignees.map((a) => `${a.firstName} ${a.lastName}`).join(', ') || 'Unassigned';
+        const creator = `${task.creator.firstName} ${task.creator.lastName}`;
+
+        return `
+                <div class="task">
+                    <div class="task-header">
+                        <div class="task-title">${task.title}</div>
+                        <div class="task-meta">ID: ${task.id}</div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <span class="status" style="background-color: ${statusColors[task.status]}">
+                            ${task.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                        <span class="priority" style="background-color: ${priorityColors[task.priority]}">
+                            ${task.priority.toUpperCase()}
+                        </span>
+                    </div>
+                    ${task.description ? `<div class="description">${task.description}</div>` : ''}
+                    <div class="assignees"><strong>Assignees:</strong> ${assignees}</div>
+                    <div class="assignees"><strong>Creator:</strong> ${creator}</div>
+                    <div class="assignees">
+                        <strong>Due Date:</strong> $
+                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}
+                    </div>
+                    <div class="assignees"><strong>Comments:</strong> ${task.dataValues.commentCount || 0}</div>
+                    <div class="assignees">
+                        <strong>Created:</strong> 
+                        ${new Date(task.createdAt).toLocaleDateString()}
+                    </div>
+                </div>
+                `;
+    }).join('')}
+
+            <div class="footer">
+                Task Management System Report
+            </div>
+        </body>
+        </html>
+        `;
+
+        // For now, return HTML that can be converted to PDF by the client
+        // In production, you might want to use puppeteer or similar to generate actual PDF
+        const timestampFile = new Date().toISOString().split('T')[0];
+        const filename = `tasks-${workspaceSlug}-${timestampFile}.html`;
+
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(htmlContent);
+    } catch (error) {
+        console.error('Export Tasks PDF Error:', error);
+        const statusCode = error.status || 500;
+        return errorResponse(res, statusCode, error.message || 'Failed to export tasks to PDF');
+    }
+};
