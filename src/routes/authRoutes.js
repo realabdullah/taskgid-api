@@ -5,6 +5,7 @@ import {
 import {requestLoginWithAuthn, loginWithAuthn, authLimiter} from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateAuthInput} from '../middleware/validationMiddleware.js';
+import twoFactorAuthRoutes from './twoFactorAuthRoutes.js';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
@@ -21,5 +22,8 @@ router.post('/refresh', validateAuthInput, refresh);
 // WebAuthn routes
 router.post('/authn/request-login', requestLoginWithAuthn);
 router.post('/authn/login', loginWithAuthn);
+
+// Two-Factor Authentication routes
+router.use('/2fa', twoFactorAuthRoutes);
 
 export default router;
