@@ -1,3 +1,5 @@
+import {describe, it, beforeEach} from 'node:test';
+import assert from 'node:assert';
 import {
     generateTwoFactorSecret,
     generateQRCode,
@@ -8,108 +10,220 @@ import {
     isValidBackupCodeFormat,
     getCurrentTOTPCode,
     getTOTPTimeRemaining,
+    validateSetupData,
 } from '../src/utils/twoFactorAuth.js';
 
-/**
- * Test Two-Factor Authentication utilities
- */
-async function testTwoFactorAuth() {
-    console.log('🔐 Testing Two-Factor Authentication Functions\n');
+describe('Two-Factor Authentication Utilities', () => {
+    let testSecret;
+    let testSecretData;
 
-    try {
-        // Test 1: Generate secret
-        console.log('1. Testing secret generation...');
-        const secretData = generateTwoFactorSecret('test@example.com', 'TaskGid Test');
-        console.log('✅ Secret generated:', {
-            hasSecret: !!secretData.secret,
-            secretLength: secretData.secret.length,
-            hasOtpauthUrl: !!secretData.otpauthUrl,
+    beforeEach(() => {
+        // Generate fresh test data for each test
+        testSecretData = generateTwoFactorSecret('test@example.com', 'TaskGid Test');
+        testSecret = testSecretData.secret;
+    });
+
+    describe('Secret Generation', () => {
+        it('should generate valid secret data', () => {
+            assert.ok(testSecretData, 'Secret data should be defined');
+            assert.ok(testSecretData.secret, 'Secret should be defined');
+            assert.ok(testSecretData.otpauthUrl, 'OTP auth URL should be defined');
+            assert.strictEqual(typeof testSecretData.secret, 'string', 'Secret should be a string');
+            assert.ok(testSecretData.secret.length > 0, 'Secret should not be empty');
         });
 
-        // Test 2: Generate QR Code
-        console.log('\n2. Testing QR code generation...');
-        const qrCode = await generateQRCode(secretData.otpauthUrl);
-        console.log('✅ QR code generated:', {
-            isDataURL: qrCode.startsWith('data:image/png;base64,'),
-            length: qrCode.length,
+        it('should generate Base32 encoded secret', () => {
+            // Base32 should only contain A-Z and 2-7
+            assert.match(testSecret, /^[A-Z2-7]+$/, 'Secret should be valid Base32');
+            assert.ok(testSecret.length >= 16, 'Secret should be at least 16 characters');
         });
 
-        // Test 3: Generate current TOTP code
-        console.log('\n3. Testing TOTP code generation...');
-        const currentCode = getCurrentTOTPCode(secretData.secret);
-        console.log('✅ Current TOTP code:', currentCode);
-        console.log('Time remaining until next code:', getTOTPTimeRemaining(), 'seconds');
-
-        // Test 4: Verify TOTP token
-        console.log('\n4. Testing TOTP verification...');
-        const isValidCurrent = verifyTOTPToken(currentCode, secretData.secret);
-        const isValidFake = verifyTOTPToken('000000', secretData.secret);
-        console.log('✅ TOTP verification results:', {
-            validCurrentCode: isValidCurrent,
-            validFakeCode: isValidFake,
+        it('should include correct service name in otpauth URL', () => {
+            assert.ok(testSecretData.otpauthUrl.includes('TaskGid%20Test'), 'Should contain service name');
+            assert.ok(testSecretData.otpauthUrl.includes('test@example.com'), 'Should contain email');
+            assert.ok(testSecretData.otpauthUrl.startsWith('otpauth://totp/'), 'Should be TOTP URL');
         });
 
-        // Test 5: Generate backup codes
-        console.log('\n5. Testing backup code generation...');
-        const backupCodes = generateBackupCodes(8);
-        console.log('✅ Backup codes generated:', {
-            count: backupCodes.length,
-            format: backupCodes[0],
-            allValidFormat: backupCodes.every(isValidBackupCodeFormat),
+        it('should validate setup data correctly', () => {
+            assert.strictEqual(validateSetupData(testSecretData), true, 'Valid setup data should pass');
+            assert.strictEqual(validateSetupData(null), false, 'Null should fail');
+            assert.strictEqual(validateSetupData({}), false, 'Empty object should fail');
+            assert.strictEqual(validateSetupData({secret: 'short'}), false, 'Short secret should fail');
+        });
+    });
+
+    describe('QR Code Generation', () => {
+        it('should generate valid QR code data URL', async () => {
+            const qrCode = await generateQRCode(testSecretData.otpauthUrl);
+
+            assert.ok(qrCode, 'QR code should be defined');
+            assert.strictEqual(typeof qrCode, 'string', 'QR code should be a string');
+            assert.match(qrCode, /^data:image\/png;base64,/, 'Should be a PNG data URL');
+            assert.ok(qrCode.length > 1000, 'QR code should be substantial in size');
         });
 
-        // Test 6: Backup code utilities
-        console.log('\n6. Testing backup code utilities...');
-        const testBackupCode = backupCodes[0];
-        console.log('✅ Backup code utilities:', {
-            isBackupCode: isBackupCode(testBackupCode),
-            isValidFormat: isValidBackupCodeFormat(testBackupCode),
-            formatted: formatBackupCode(testBackupCode.toLowerCase()),
-            isTOTPCode: isBackupCode('123456'),
+        it('should throw error for invalid otpauth URL', async () => {
+            try {
+                await generateQRCode('invalid-url');
+                assert.fail('Should have thrown an error');
+            } catch (error) {
+                assert.ok(error.message.includes('Failed to generate QR code'), 'Should throw appropriate error');
+            }
+        });
+    });
+
+    describe('TOTP Token Generation and Verification', () => {
+        it('should generate valid TOTP code', () => {
+            const code = getCurrentTOTPCode(testSecret);
+
+            assert.ok(code, 'Code should be defined');
+            assert.strictEqual(typeof code, 'string', 'Code should be a string');
+            assert.match(code, /^\d{6}$/, 'Code should be 6 digits');
         });
 
-        // Test 7: Edge cases
-        console.log('\n7. Testing edge cases...');
-        console.log('✅ Edge case results:', {
-            emptyTokenVerification: verifyTOTPToken('', secretData.secret),
-            nullTokenVerification: verifyTOTPToken(null, secretData.secret),
-            invalidSecretVerification: verifyTOTPToken(currentCode, 'INVALID'),
-            malformedBackupCode: isValidBackupCodeFormat('1234'),
-            spacedBackupCode: isValidBackupCodeFormat('ABCD 1234'),
+        it('should verify current TOTP code', () => {
+            const currentCode = getCurrentTOTPCode(testSecret);
+            const isValid = verifyTOTPToken(currentCode, testSecret);
+
+            assert.strictEqual(isValid, true, 'Current code should be valid');
         });
 
-        console.log('\n🎉 All 2FA tests completed successfully!');
+        it('should reject invalid TOTP codes', () => {
+            assert.strictEqual(verifyTOTPToken('000000', testSecret), false, 'Should reject 000000');
+            assert.strictEqual(verifyTOTPToken('123456', testSecret), false, 'Should reject 123456');
+            assert.strictEqual(verifyTOTPToken('999999', testSecret), false, 'Should reject 999999');
+        });
 
-        // Test summary
-        console.log('\n📊 Test Summary:');
-        console.log('- Secret generation: ✅');
-        console.log('- QR code generation: ✅');
-        console.log('- TOTP verification: ✅');
-        console.log('- Backup code generation: ✅');
-        console.log('- Backup code validation: ✅');
-        console.log('- Edge case handling: ✅');
+        it('should handle edge cases for TOTP verification', () => {
+            assert.strictEqual(verifyTOTPToken('', testSecret), false, 'Empty token should fail');
+            assert.strictEqual(verifyTOTPToken(null, testSecret), false, 'Null token should fail');
+            assert.strictEqual(verifyTOTPToken('123', testSecret), false, 'Short token should fail');
+            assert.strictEqual(verifyTOTPToken('1234567', testSecret), false, 'Long token should fail');
+            assert.strictEqual(verifyTOTPToken('12345a', testSecret), false, 'Non-numeric should fail');
+            assert.strictEqual(verifyTOTPToken('123456', ''), false, 'Empty secret should fail');
+            assert.strictEqual(verifyTOTPToken('123456', null), false, 'Null secret should fail');
+        });
 
-        return true;
-    } catch (error) {
-        console.error('❌ Test failed:', error);
-        return false;
-    }
-}
+        it('should handle tokens with spaces and dashes', () => {
+            const currentCode = getCurrentTOTPCode(testSecret);
+            const codeWithSpaces = `${currentCode.slice(0, 3)} ${currentCode.slice(3)}`;
+            const codeWithDashes = `${currentCode.slice(0, 3)}-${currentCode.slice(3)}`;
 
-/**
- * Test TwoFactorAuth model methods (if running in Node.js environment with database)
- */
-async function testTwoFactorAuthModel() {
-    console.log('\n🗄️  Testing TwoFactorAuth Model (if available)...');
+            assert.strictEqual(verifyTOTPToken(codeWithSpaces, testSecret), true, 'Should handle spaces');
+            assert.strictEqual(verifyTOTPToken(codeWithDashes, testSecret), true, 'Should handle dashes');
+        });
 
-    try {
-        // This would require database connection
-        // For now, just test the backup code methods logically
-        const mockTwoFactorAuth = {
-            backupCodes: ['ABCD-1234', 'EFGH-5678', 'IJKL-9012'],
+        it('should get time remaining until next code', () => {
+            const timeRemaining = getTOTPTimeRemaining();
+
+            assert.ok(timeRemaining !== undefined, 'Time remaining should be defined');
+            assert.strictEqual(typeof timeRemaining, 'number', 'Should be a number');
+            assert.ok(timeRemaining > 0, 'Should be positive');
+            assert.ok(timeRemaining <= 30, 'Should not exceed 30 seconds');
+        });
+    });
+
+    describe('Backup Code Management', () => {
+        it('should generate valid backup codes', () => {
+            const codes = generateBackupCodes(8);
+
+            assert.ok(codes, 'Codes should be defined');
+            assert.ok(Array.isArray(codes), 'Should be an array');
+            assert.strictEqual(codes.length, 8, 'Should generate 8 codes');
+
+            codes.forEach((code) => {
+                assert.strictEqual(typeof code, 'string', 'Each code should be a string');
+                assert.match(code, /^[A-F0-9]{4}-[A-F0-9]{4}$/, 'Should match expected format');
+            });
+        });
+
+        it('should generate unique backup codes', () => {
+            const codes = generateBackupCodes(8);
+            const uniqueCodes = new Set(codes);
+
+            assert.strictEqual(uniqueCodes.size, codes.length, 'All codes should be unique');
+        });
+
+        it('should validate backup code format correctly', () => {
+            assert.strictEqual(isValidBackupCodeFormat('ABCD-1234'), true, 'Valid format should pass');
+            assert.strictEqual(isValidBackupCodeFormat('1234-ABCD'), true, 'Valid format should pass');
+            assert.strictEqual(isValidBackupCodeFormat('FFFF-0000'), true, 'Valid format should pass');
+
+            // Invalid formats
+            assert.strictEqual(isValidBackupCodeFormat('1234'), false, 'Short format should fail');
+            assert.strictEqual(isValidBackupCodeFormat('ABCD-123'), false, 'Incomplete format should fail');
+            assert.strictEqual(isValidBackupCodeFormat('ABCD-12345'), false, 'Long format should fail');
+            assert.strictEqual(isValidBackupCodeFormat('ABCD_1234'), false, 'Wrong separator should fail');
+            assert.strictEqual(isValidBackupCodeFormat('GHIJ-1234'), false, 'Invalid hex should fail');
+            assert.strictEqual(isValidBackupCodeFormat(''), false, 'Empty should fail');
+            assert.strictEqual(isValidBackupCodeFormat(null), false, 'Null should fail');
+            assert.strictEqual(isValidBackupCodeFormat(undefined), false, 'Undefined should fail');
+        });
+
+        it('should identify backup codes correctly', () => {
+            assert.strictEqual(isBackupCode('ABCD-1234'), true, 'Valid backup code should be identified');
+            assert.strictEqual(isBackupCode('ABCD1234'), true, 'Backup code without dash should work');
+            assert.strictEqual(isBackupCode('abcd-1234'), true, 'Lowercase should work');
+
+            assert.strictEqual(isBackupCode('123456'), false, 'TOTP format should not be backup code');
+            assert.strictEqual(isBackupCode('ABCD-123'), false, 'Invalid format should not be backup code');
+            assert.strictEqual(isBackupCode(''), false, 'Empty should not be backup code');
+            assert.strictEqual(isBackupCode(null), false, 'Null should not be backup code');
+        });
+
+        it('should format backup codes correctly', () => {
+            assert.strictEqual(formatBackupCode('abcd-1234'), 'ABCD-1234', 'Should uppercase');
+            assert.strictEqual(formatBackupCode('  ABCD-1234  '), 'ABCD-1234', 'Should trim spaces');
+            assert.strictEqual(formatBackupCode('abcd 1234'), 'ABCD1234', 'Should handle space separator');
+            assert.strictEqual(formatBackupCode(''), '', 'Empty should return empty');
+            assert.strictEqual(formatBackupCode(null), '', 'Null should return empty');
+        });
+
+        it('should generate custom number of backup codes', () => {
+            assert.strictEqual(generateBackupCodes(5).length, 5, 'Should generate 5 codes');
+            assert.strictEqual(generateBackupCodes(10).length, 10, 'Should generate 10 codes');
+            assert.strictEqual(generateBackupCodes(1).length, 1, 'Should generate 1 code');
+            assert.strictEqual(generateBackupCodes().length, 8, 'Default should be 8 codes');
+        });
+    });
+
+    describe('Security and Edge Cases', () => {
+        it('should handle malformed inputs gracefully', () => {
+            // These should not throw errors, just return false/empty
+            assert.doesNotThrow(() => verifyTOTPToken(undefined, testSecret), 'Should handle undefined token');
+            assert.doesNotThrow(() => isBackupCode(undefined), 'Should handle undefined backup code check');
+            assert.doesNotThrow(() => formatBackupCode(undefined), 'Should handle undefined format');
+            assert.doesNotThrow(() => isValidBackupCodeFormat({}), 'Should handle object input');
+        });
+
+        it('should not accept TOTP codes for different secrets', () => {
+            const secret1 = generateTwoFactorSecret('user1@example.com').secret;
+            const secret2 = generateTwoFactorSecret('user2@example.com').secret;
+
+            const code1 = getCurrentTOTPCode(secret1);
+
+            assert.strictEqual(verifyTOTPToken(code1, secret1), true, 'Code should work with correct secret');
+            assert.strictEqual(verifyTOTPToken(code1, secret2), false, 'Code should not work with wrong secret');
+        });
+
+        it('should generate different secrets for different users', () => {
+            const secret1 = generateTwoFactorSecret('user1@example.com');
+            const secret2 = generateTwoFactorSecret('user2@example.com');
+
+            assert.notStrictEqual(secret1.secret, secret2.secret, 'Secrets should be different');
+            assert.notStrictEqual(secret1.otpauthUrl, secret2.otpauthUrl, 'URLs should be different');
+        });
+    });
+});
+
+describe('TwoFactorAuth Model Methods (Mock)', () => {
+    let mockTwoFactorAuth;
+
+    beforeEach(() => {
+        mockTwoFactorAuth = {
+            backupCodes: ['ABCD-1234', 'EFGH-5678', 'IJKL-9012', 'MNOP-3456'],
             recoveryCodesUsed: 0,
 
-            // Mock method to test backup code usage
             useBackupCode(code) {
                 const codes = this.backupCodes || [];
                 const index = codes.indexOf(code.toUpperCase());
@@ -125,49 +239,68 @@ async function testTwoFactorAuthModel() {
                 return true;
             },
 
-            // Mock method to check if codes are low
             isBackupCodesLow() {
                 const codes = this.backupCodes || [];
                 return codes.length < 3;
             },
+
+            regenerateBackupCodes() {
+                this.backupCodes = generateBackupCodes(8);
+                this.recoveryCodesUsed = 0;
+                return this.backupCodes;
+            },
         };
+    });
 
-        console.log('Testing backup code usage...');
-        const validCode = 'ABCD-1234';
-        const invalidCode = 'XXXX-YYYY';
+    it('should use valid backup codes successfully', () => {
+        const result = mockTwoFactorAuth.useBackupCode('ABCD-1234');
 
-        const validResult = mockTwoFactorAuth.useBackupCode(validCode);
-        const invalidResult = mockTwoFactorAuth.useBackupCode(invalidCode);
+        assert.strictEqual(result, true, 'Should successfully use valid code');
+        assert.ok(!mockTwoFactorAuth.backupCodes.includes('ABCD-1234'), 'Used code should be removed');
+        assert.strictEqual(mockTwoFactorAuth.backupCodes.length, 3, 'Should have 3 codes remaining');
+        assert.strictEqual(mockTwoFactorAuth.recoveryCodesUsed, 1, 'Should increment used count');
+    });
 
-        console.log('✅ Model method tests:', {
-            validCodeUsage: validResult,
-            invalidCodeUsage: invalidResult,
-            remainingCodes: mockTwoFactorAuth.backupCodes.length,
-            isLow: mockTwoFactorAuth.isBackupCodesLow(),
-            usedCount: mockTwoFactorAuth.recoveryCodesUsed,
-        });
+    it('should reject invalid backup codes', () => {
+        const result = mockTwoFactorAuth.useBackupCode('XXXX-YYYY');
 
-        return true;
-    } catch (error) {
-        console.error('❌ Model test failed:', error);
-        return false;
-    }
-}
+        assert.strictEqual(result, false, 'Should reject invalid code');
+        assert.strictEqual(mockTwoFactorAuth.backupCodes.length, 4, 'Should still have all codes');
+        assert.strictEqual(mockTwoFactorAuth.recoveryCodesUsed, 0, 'Should not increment used count');
+    });
 
-// Run tests if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-    console.log('🚀 Starting Two-Factor Authentication Tests...\n');
+    it('should detect when backup codes are running low', () => {
+        assert.strictEqual(mockTwoFactorAuth.isBackupCodesLow(), false, 'Should not be low initially');
 
-    (async () => {
-        const utilsTest = await testTwoFactorAuth();
-        const modelTest = await testTwoFactorAuthModel();
+        // Use codes until low
+        mockTwoFactorAuth.useBackupCode('ABCD-1234');
+        mockTwoFactorAuth.useBackupCode('EFGH-5678');
 
-        console.log('\n' + '='.repeat(50));
-        console.log(`Overall Test Result: ${utilsTest && modelTest ? '✅ PASSED' : '❌ FAILED'}`);
-        console.log('='.repeat(50));
+        assert.strictEqual(mockTwoFactorAuth.isBackupCodesLow(), true, 'Should be low after using codes');
+    });
 
-        process.exit(utilsTest && modelTest ? 0 : 1);
-    })();
-}
+    it('should regenerate backup codes correctly', () => {
+        const originalCodes = [...mockTwoFactorAuth.backupCodes];
+        mockTwoFactorAuth.useBackupCode('ABCD-1234'); // Use one code
 
-export {testTwoFactorAuth, testTwoFactorAuthModel};
+        const newCodes = mockTwoFactorAuth.regenerateBackupCodes();
+
+        assert.strictEqual(newCodes.length, 8, 'Should generate 8 new codes');
+        assert.strictEqual(mockTwoFactorAuth.backupCodes.length, 8, 'Should have 8 codes');
+        assert.strictEqual(mockTwoFactorAuth.recoveryCodesUsed, 0, 'Should reset used count');
+
+        // New codes should be different from original
+        const hasCommonCodes = newCodes.some((code) => originalCodes.includes(code));
+        assert.strictEqual(hasCommonCodes, false, 'New codes should be different from original');
+    });
+
+    it('should handle case-insensitive backup code usage', () => {
+        assert.strictEqual(mockTwoFactorAuth.useBackupCode('abcd-1234'), true, 'Should handle lowercase');
+        assert.strictEqual(mockTwoFactorAuth.useBackupCode('efgh-5678'), true, 'Should handle lowercase');
+    });
+
+    it('should not allow reuse of backup codes', () => {
+        assert.strictEqual(mockTwoFactorAuth.useBackupCode('ABCD-1234'), true, 'First use should succeed');
+        assert.strictEqual(mockTwoFactorAuth.useBackupCode('ABCD-1234'), false, 'Reuse should fail');
+    });
+});
