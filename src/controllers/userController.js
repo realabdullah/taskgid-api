@@ -1,10 +1,8 @@
 import User from '../models/User.js';
-import TwoFactorAuth from '../models/TwoFactorAuth.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
 import Auth from '../utils/auth.js';
 import emailService from '../utils/emailService.js';
 import {errorResponse, successResponse} from '../utils/responseUtils.js';
-import {verifyTOTPToken, isBackupCode, formatBackupCode} from '../utils/twoFactorAuth.js';
 import 'dotenv/config';
 
 /**
@@ -106,85 +104,15 @@ export const register = async (req, res) => {
  * @param {Object} req.body - Request body
  * @param {string} req.body.email - User email
  * @param {string} req.body.password - User password
- * @param {string} [req.body.twoFactorToken] - 2FA token (TOTP or backup code)
  * @param {Object} res - Express response object
  * @return {Object} Response with user data and tokens or error
  */
 export const login = async (req, res) => {
     try {
-        const {email, password, twoFactorToken} = req.body;
+        const {email, password} = req.body;
         if (!email || !password) return errorResponse(res, 400, 'Email and password are required');
 
         const user = await User.findByCredentials(email.toLowerCase(), password);
-
-        // Check if user has 2FA enabled
-        const twoFactorAuth = await TwoFactorAuth.findOne({
-            where: {userId: user.id},
-            attributes: ['isEnabled', 'secret', 'backupCodes', 'lastUsedAt'],
-        });
-
-        // If 2FA is enabled, require verification
-        if (twoFactorAuth && twoFactorAuth.isEnabled) {
-            if (!twoFactorToken) {
-                return errorResponse(res, 428, 'Two-factor authentication code is required', {
-                    requiresTwoFactor: true,
-                    userId: user.id, // Temporary identifier for 2FA verification
-                    message: 'Please provide your 6-digit authenticator code or backup code',
-                });
-            }
-
-            // Verify the 2FA token
-            let isValidAuth = false;
-            let tokenType = 'unknown';
-
-            if (isBackupCode(twoFactorToken)) {
-                // Handle backup code
-                const formattedCode = formatBackupCode(twoFactorToken);
-                isValidAuth = twoFactorAuth.useBackupCode(formattedCode);
-                tokenType = 'backup_code';
-
-                if (isValidAuth) {
-                    await twoFactorAuth.save();
-                }
-            } else {
-                // Handle TOTP token
-                isValidAuth = verifyTOTPToken(twoFactorToken, twoFactorAuth.secret);
-                tokenType = 'totp';
-            }
-
-            if (!isValidAuth) {
-                return errorResponse(res, 401, 'Invalid two-factor authentication code', {
-                    requiresTwoFactor: true,
-                    errorType: 'invalid_2fa_code',
-                    tokenType: tokenType,
-                });
-            }
-
-            // Update last used timestamp
-            await twoFactorAuth.update({lastUsedAt: new Date()});
-
-            // Check if backup codes are running low
-            if (tokenType === 'backup_code' && twoFactorAuth.isBackupCodesLow()) {
-                // Include warning in response
-                const tokens = await Auth.generateTokenPair(user);
-
-                return successResponse(res, {
-                    user,
-                    accessToken: {
-                        token: tokens.accessToken,
-                        expires: tokens.expiresIn,
-                    },
-                    refreshToken: {
-                        token: tokens.refreshToken,
-                    },
-                    warning: {
-                        type: 'backup_codes_low',
-                        message: 'You have less than 3 backup codes remaining. Consider regenerating them.',
-                        backupCodesRemaining: twoFactorAuth.backupCodes.length,
-                    },
-                });
-            }
-        }
 
         // Generate tokens for successful authentication
         const tokens = await Auth.generateTokenPair(user);

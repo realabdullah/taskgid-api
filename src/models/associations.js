@@ -13,7 +13,6 @@ import WorkspaceTeam from './WorkspaceTeam.js';
 import WorkspaceActivity from './WorkspaceActivity.js';
 import TaskAssignee from './TaskAssignee.js';
 import CommentLike from './CommentLike.js';
-import TwoFactorAuth from './TwoFactorAuth.js';
 import Tag from './Tag.js';
 import TaskTag from './TaskTag.js';
 
@@ -27,7 +26,6 @@ User.hasMany(Attachment, {foreignKey: 'userId', as: 'attachments'});
 User.hasMany(Authn, {foreignKey: 'userId', as: 'authns'});
 User.hasMany(WorkspaceActivity, {foreignKey: 'userId', as: 'workspaceActivities'});
 User.hasMany(CommentLike, {foreignKey: 'userId', as: 'commentLikes'});
-User.hasOne(TwoFactorAuth, {foreignKey: 'userId', as: 'twoFactorAuth'});
 
 // Workspace associations
 Workspace.belongsTo(User, {foreignKey: 'userId', as: 'user'});
@@ -86,9 +84,6 @@ TaskAssignee.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 // CommentLike associations
 CommentLike.belongsTo(Comment, {foreignKey: 'commentId', as: 'commentRef'});
 CommentLike.belongsTo(User, {foreignKey: 'userId', as: 'userRef'});
-
-// TwoFactorAuth associations
-TwoFactorAuth.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 
 // Tag associations
 Tag.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
