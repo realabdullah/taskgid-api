@@ -8,10 +8,11 @@ import '../src/models/associations.js';
 import {syncDatabase} from '../src/config/database.js';
 
 const force = process.argv.includes('--force');
+const alter = process.argv.includes('--alter');
 
-console.log(`Syncing database${force ? ' (force mode)' : ''}...`);
+console.log(`Syncing database${force ? ' (force mode)' : ''}${alter ? ' (alter mode)' : ''}...`);
 
-syncDatabase(force)
+syncDatabase({ force, alter })
     .then(() => {
         console.log('Database sync completed successfully');
         process.exit(0);

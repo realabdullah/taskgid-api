@@ -74,13 +74,13 @@ testConnection();
 
 /**
  * Syncs the database with the models
- * @param {boolean} force - Whether to force the sync (drops all tables)
+ * @param {Object} options - Sequelize sync options (force, alter, etc.)
  * @return {Promise<void>}
  */
-export const syncDatabase = async (force = false) => {
+export const syncDatabase = async (options = {}) => {
   try {
-    await sequelize.sync({ force });
-    console.log("Database synced successfully");
+    await sequelize.sync(options);
+    console.log(`Database synced successfully (options: ${JSON.stringify(options)})`);
   } catch (error) {
     console.error("Error syncing database:", error);
     throw error;

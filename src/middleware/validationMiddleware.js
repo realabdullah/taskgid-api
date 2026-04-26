@@ -242,7 +242,7 @@ export const validateUpdateUserProfile = [
     },
 ];
 
-export const validateAuthInput = [
+export const validateRegisterInput = [
     body('email').trim().isEmail().withMessage('Invalid email format'),
     body('password')
         .isLength({min: 8})
@@ -254,6 +254,48 @@ export const validateAuthInput = [
             'Password must contain at least one uppercase letter, one lowercase letter, ' +
             'one number, and one special character',
         ),
+    body('username')
+        .trim()
+        .notEmpty()
+        .withMessage('Username is required')
+        .isLength({min: 3, max: 30})
+        .withMessage('Username must be between 3 and 30 characters'),
+    body('firstName').trim().notEmpty().withMessage('First name is required'),
+    body('lastName').trim().notEmpty().withMessage('Last name is required'),
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array().map((err) => ({
+                    field: err.param,
+                    message: err.msg,
+                })),
+            });
+        }
+        next();
+    },
+];
+
+export const validateLoginInput = [
+    body('email').trim().isEmail().withMessage('Invalid email format'),
+    body('password').notEmpty().withMessage('Password is required'),
+    (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                errors: errors.array().map((err) => ({
+                    field: err.param,
+                    message: err.msg,
+                })),
+            });
+        }
+        next();
+    },
+];
+
+export const validateRefreshInput = [
     (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

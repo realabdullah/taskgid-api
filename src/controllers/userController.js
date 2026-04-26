@@ -95,15 +95,14 @@ export const register = async (req, res) => {
 
     // Handle generic errors (like the one from the User model hook)
     const status = error.status || 500;
-    const message = status === 500 
-      ? (process.env.NODE_ENV === 'development' ? error.message : "Registration failed due to an internal error.")
-      : error.message;
+    const message =
+      status === 500
+        ? process.env.NODE_ENV === "development"
+          ? error.message
+          : "Registration failed due to an internal error."
+        : error.message;
 
-    return errorResponse(
-      res,
-      status,
-      message,
-    );
+    return errorResponse(res, status, message);
   }
 };
 
@@ -404,7 +403,7 @@ export const forgotPassword = async (req, res) => {
     const resetToken = await user.generateResetPasswordToken();
     await user.save();
 
-    const resetUrl = `${process.env.FRONTEND_URL || process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL || process.env.FRONTEND_URL}/reset-confirmation?token=${resetToken}`;
 
     await emailService.sendPasswordResetEmail(user, resetUrl);
 

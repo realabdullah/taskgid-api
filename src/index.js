@@ -75,7 +75,7 @@ const swaggerDocument = JSON.parse(fs.readFileSync(path.join(__dirname, '../swag
 setupAssociations();
 
 // Sync database
-syncDatabase(false).catch((error) => {
+syncDatabase({ force: false }).catch((error) => {
     console.error('Failed to sync database:', error);
     process.exit(1);
 });

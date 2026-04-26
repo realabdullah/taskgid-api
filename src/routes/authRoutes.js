@@ -4,7 +4,11 @@ import {
 } from '../controllers/userController.js';
 import {requestLoginWithAuthn, loginWithAuthn, authLimiter} from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
-import {validateAuthInput} from '../middleware/validationMiddleware.js';
+import {
+    validateRegisterInput,
+    validateLoginInput,
+    validateRefreshInput,
+} from '../middleware/validationMiddleware.js';
 
 // eslint-disable-next-line new-cap
 const router = express.Router();
@@ -13,10 +17,10 @@ const router = express.Router();
 router.use(authLimiter);
 
 // Authentication routes
-router.post('/register', validateAuthInput, register);
-router.post('/login', validateAuthInput, login);
+router.post('/register', validateRegisterInput, register);
+router.post('/login', validateLoginInput, login);
 router.post('/logout', authMiddleware, logout);
-router.post('/refresh', validateAuthInput, refresh);
+router.post('/refresh', validateRefreshInput, refresh);
 
 // Password management routes
 router.post('/forgot-password', forgotPassword);
