@@ -29,6 +29,9 @@ import {syncDatabase} from './config/database.js';
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Trust proxy for Vercel/proxied environments
+app.set('trust proxy', 1);
+
 // Body parser middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
