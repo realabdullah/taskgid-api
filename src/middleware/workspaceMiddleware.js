@@ -1,5 +1,4 @@
 import {Workspace} from '../models/Workspace.js';
-import User from '../models/User.js';
 import WorkspaceTeam from '../models/WorkspaceTeam.js';
 
 /**
@@ -9,13 +8,24 @@ import WorkspaceTeam from '../models/WorkspaceTeam.js';
  * @param {Function} next - Express next function
  */
 const checkMemberMiddleware = async (req, res, next) => {
+    const slug = req.params.slug || req.params.workspaceSlug;
     const workspace = await Workspace.findOne({
-        where: {slug: req.params.workspaceSlug},
-        include: [{model: User, as: 'team'}],
+        where: {slug},
     });
 
-    if (!workspace || !workspace.team.some((member) => member.id === req.user.id)) {
-        return res.status(403).json({error: 'We could not find the workspace you are looking for!'});
+    if (!workspace) {
+        return res.status(404).json({error: 'Workspace not found', success: false});
+    }
+
+    const membership = await WorkspaceTeam.findOne({
+        where: {
+            workspaceId: workspace.id,
+            userId: req.user.id,
+        },
+    });
+
+    if (!membership) {
+        return res.status(403).json({error: 'We could not find the workspace you are looking for!', success: false});
     }
     next();
 };
@@ -27,8 +37,9 @@ const checkMemberMiddleware = async (req, res, next) => {
  * @param {Function} next - Express next function
  */
 const checkAdminMiddleware = async (req, res, next) => {
+    const slug = req.params.slug || req.params.workspaceSlug;
     const workspace = await Workspace.findOne({
-        where: {slug: req.params.slug},
+        where: {slug},
     });
 
     if (!workspace) {
@@ -44,7 +55,7 @@ const checkAdminMiddleware = async (req, res, next) => {
         where: {
             workspaceId: workspace.id,
             userId: req.user.id,
-            isAdmin: true,
+            role: 'admin',
         },
     });
 
@@ -63,8 +74,9 @@ const checkAdminMiddleware = async (req, res, next) => {
  * @param {Function} next - Express next function
  */
 const checkSuperAdminMiddleware = async (req, res, next) => {
+    const slug = req.params.slug || req.params.workspaceSlug;
     const workspace = await Workspace.findOne({
-        where: {slug: req.params.slug},
+        where: {slug},
     });
 
     if (!workspace) {

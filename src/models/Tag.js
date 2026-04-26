@@ -50,14 +50,14 @@ const Tag = sequelize.define('Tag', {
     indexes: [
         {
             unique: true,
-            fields: ['name', 'workspaceId'],
+            fields: ['name', 'workspace_id'],
             name: 'unique_tag_per_workspace',
         },
         {
-            fields: ['workspaceId'],
+            fields: ['workspace_id'],
         },
         {
-            fields: ['createdById'],
+            fields: ['created_by_id'],
         },
     ],
 });

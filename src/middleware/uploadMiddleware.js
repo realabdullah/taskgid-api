@@ -2,10 +2,37 @@
  * Middleware for handling file uploads
  */
 import multer from 'multer';
-import {processAndSaveFile, deleteFile} from '../utils/fileUpload.js';
+import multerS3 from 'multer-s3';
+import {S3Client} from '@aws-sdk/client-s3';
+import {v4 as uuidv4} from 'uuid';
+import path from 'path';
+import 'dotenv/config';
 
-// Configure multer for memory storage
-const storage = multer.memoryStorage();
+// Configure S3 Client for R2
+const s3Client = new S3Client({
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    region: 'auto',
+    forcePathStyle: true,
+});
+
+const folder = process.env.R2_FOLDER || 'taskgid';
+
+// Configure multer-s3 storage
+const storage = multerS3({
+    s3: s3Client,
+    bucket: process.env.R2_BUCKET,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: function(req, file, cb) {
+        const timestamp = Date.now();
+        const randomString = uuidv4().substring(0, 8);
+        const extension = path.extname(file.originalname);
+        cb(null, `${folder}/${timestamp}-${randomString}${extension}`);
+    },
+});
 
 // File filter to restrict file types
 const fileFilter = (req, file, cb) => {
@@ -48,18 +75,18 @@ const upload = multer({
 export const uploadSingle = (fieldName) => {
     return [
         upload.single(fieldName),
-        async (req, res, next) => {
+        (req, res, next) => {
             if (!req.file) {
                 return next();
             }
-
-            try {
-                const fileInfo = await processAndSaveFile(req.file);
-                req.uploadedFile = fileInfo;
-                next();
-            } catch (error) {
-                next(error);
-            }
+            req.uploadedFile = {
+                id: req.file.key,
+                url: `${process.env.R2_PUBLIC_URL}/${req.file.key}`,
+                filename: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size,
+            };
+            next();
         },
     ];
 };
@@ -73,28 +100,18 @@ export const uploadSingle = (fieldName) => {
 export const uploadMultiple = (fieldName, maxCount = 5) => {
     return [
         upload.array(fieldName, maxCount),
-        async (req, res, next) => {
+        (req, res, next) => {
             if (!req.files || req.files.length === 0) {
                 return next();
             }
-
-            try {
-                const uploadedFiles = await Promise.all(
-                    req.files.map((file) => processAndSaveFile(file)),
-                );
-                req.uploadedFiles = uploadedFiles;
-                next();
-            } catch (error) {
-                // Clean up any files that were uploaded before the error
-                if (req.uploadedFiles) {
-                    req.uploadedFiles.forEach((file) => {
-                        deleteFile(file.filename).catch((err) => {
-                            console.error('Error deleting file after upload error:', err);
-                        });
-                    });
-                }
-                next(error);
-            }
+            req.uploadedFiles = req.files.map((file) => ({
+                id: file.key,
+                url: `${process.env.R2_PUBLIC_URL}/${file.key}`,
+                filename: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size,
+            }));
+            next();
         },
     ];
 };

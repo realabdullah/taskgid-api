@@ -409,13 +409,22 @@ export const deleteComment = async (req, res) => {
         }
 
         if (comment.userId !== userId) {
-            await t.rollback();
-            return res
-                .status(403)
-                .json({
-                    success: false,
-                    error: 'You are not authorized to delete this comment',
-                });
+            const task = await Task.findByPk(taskId, {attributes: ['workspaceId'], transaction: t});
+            const membership = await sequelize.models.WorkspaceTeam.findOne({
+                where: {workspaceId: task.workspaceId, userId},
+                transaction: t,
+            });
+            const isAdmin = membership && ['admin', 'creator'].includes(membership.role);
+
+            if (!isAdmin) {
+                await t.rollback();
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error: 'You are not authorized to delete this comment',
+                    });
+            }
         }
 
         await comment.destroy({transaction: t});

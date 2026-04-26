@@ -4,7 +4,7 @@
 import Attachment from '../models/Attachment.js';
 import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
-import {processAndSaveFile, getFileInfo, deleteFile} from '../utils/fileUpload.js';
+import {deleteFile} from '../utils/fileUpload.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {errorResponse} from '../utils/responseUtils.js';
 
@@ -17,7 +17,7 @@ export const uploadTaskAttachment = async (req, res) => {
     const {id: workspaceId, taskId} = req.params;
     const userId = req.user.id;
 
-    if (!req.file) {
+    if (!req.uploadedFile) {
         return errorResponse(res, 400, 'No file uploaded.');
     }
 
@@ -35,8 +35,8 @@ export const uploadTaskAttachment = async (req, res) => {
             return errorResponse(res, 403, 'Access denied to this workspace');
         }
 
-        // 2. Upload file using storage provider
-        const uploadedFile = await processAndSaveFile(req.file);
+        // 2. File already uploaded via uploadMiddleware
+        const uploadedFile = req.uploadedFile;
         if (!uploadedFile || !uploadedFile.url) {
             throw new Error('File upload failed via storage provider.');
         }
@@ -44,12 +44,12 @@ export const uploadTaskAttachment = async (req, res) => {
         // 3. Create Attachment record in DB
         const attachment = await Attachment.create({
             filename: uploadedFile.path, // Or key, depending on provider
-            originalname: uploadedFile.originalname || req.file.originalname,
-            mimetype: uploadedFile.mimetype || req.file.mimetype,
-            size: uploadedFile.size || req.file.size,
-            path: uploadedFile.path, // Store the path/key for deletion
+            originalname: uploadedFile.filename,
+            mimetype: uploadedFile.mimetype,
+            size: uploadedFile.size,
+            path: uploadedFile.id, // Store the path/key for deletion
             url: uploadedFile.url,
-            storageType: getFileInfo(), // Get type from provider
+            storageType: 'R2',
             userId: userId,
             taskId: taskId, // Link to task
             commentId: null, // Explicitly null for task attachments
@@ -59,9 +59,9 @@ export const uploadTaskAttachment = async (req, res) => {
     } catch (error) {
         console.error('Error uploading task attachment:', error);
         // Attempt to clean up uploaded file if DB insert fails
-        if (req.file && error.name !== 'StorageUploadError') { // Avoid deleting if storage itself failed
+        if (req.uploadedFile && error.name !== 'StorageUploadError') { // Avoid deleting if storage itself failed
             try {
-                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
+                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.uploadedFile.id;
                 if (pathToDelete) await deleteFile(pathToDelete);
             } catch (cleanupError) {
                 console.error('Failed to cleanup partially uploaded file:', cleanupError);
@@ -80,7 +80,7 @@ export const uploadCommentAttachment = async (req, res) => {
     const {id: workspaceId, commentId} = req.params;
     const userId = req.user.id;
 
-    if (!req.file) {
+    if (!req.uploadedFile) {
         return errorResponse(res, 400, 'No file uploaded.');
     }
 
@@ -100,8 +100,8 @@ export const uploadCommentAttachment = async (req, res) => {
             return errorResponse(res, 403, 'Access denied to this workspace');
         }
 
-        // 2. Upload file
-        const uploadedFile = await processAndSaveFile(req.file);
+        // 2. File already uploaded via uploadMiddleware
+        const uploadedFile = req.uploadedFile;
         if (!uploadedFile || !uploadedFile.url) {
             throw new Error('File upload failed via storage provider.');
         }
@@ -109,12 +109,12 @@ export const uploadCommentAttachment = async (req, res) => {
         // 3. Create Attachment record
         const attachment = await Attachment.create({
             filename: uploadedFile.path,
-            originalname: uploadedFile.originalname || req.file.originalname,
-            mimetype: uploadedFile.mimetype || req.file.mimetype,
-            size: uploadedFile.size || req.file.size,
-            path: uploadedFile.path,
+            originalname: uploadedFile.filename,
+            mimetype: uploadedFile.mimetype,
+            size: uploadedFile.size,
+            path: uploadedFile.id,
             url: uploadedFile.url,
-            storageType: getFileInfo(),
+            storageType: 'R2',
             userId: userId,
             taskId: null, // Explicitly null for comment attachments
             commentId: commentId, // Link to comment
@@ -124,9 +124,9 @@ export const uploadCommentAttachment = async (req, res) => {
     } catch (error) {
         console.error('Error uploading comment attachment:', error);
         // Attempt cleanup
-        if (req.file && error.name !== 'StorageUploadError') {
+        if (req.uploadedFile && error.name !== 'StorageUploadError') {
             try {
-                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.file.path;
+                const pathToDelete = (error.attachmentData && error.attachmentData.path) || req.uploadedFile.id;
                 if (pathToDelete) await deleteFile(pathToDelete);
             } catch (cleanupError) {
                 console.error('Failed to cleanup partially uploaded file:', cleanupError);

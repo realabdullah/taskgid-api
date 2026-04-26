@@ -3,8 +3,9 @@
  * This script can be used to sync the database with the models
  * Usage: node scripts/sync-db.js [--force]
  */
-import {syncDatabase} from '../src/config/database.js';
 import 'dotenv/config';
+import '../src/models/associations.js';
+import {syncDatabase} from '../src/config/database.js';
 
 const force = process.argv.includes('--force');
 

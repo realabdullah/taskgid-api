@@ -1,5 +1,5 @@
 import {DataTypes, Model} from 'sequelize';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import sequelize from '../config/database.js';
 
@@ -117,16 +117,6 @@ User.init(
                     msg: 'Please provide a valid URL for the profile picture.',
                 },
             },
-        },
-        fcmToken: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            field: 'fcm_token',
-        },
-        knockToken: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            field: 'knock_token',
         },
         password: {
             type: DataTypes.STRING,

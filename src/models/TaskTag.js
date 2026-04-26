@@ -36,14 +36,14 @@ const TaskTag = sequelize.define('TaskTag', {
     indexes: [
         {
             unique: true,
-            fields: ['taskId', 'tagId'],
+            fields: ['task_id', 'tag_id'],
             name: 'unique_task_tag',
         },
         {
-            fields: ['taskId'],
+            fields: ['task_id'],
         },
         {
-            fields: ['tagId'],
+            fields: ['tag_id'],
         },
     ],
 });

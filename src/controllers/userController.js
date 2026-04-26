@@ -1,9 +1,10 @@
-import User from '../models/User.js';
-import WorkspaceTeam from '../models/WorkspaceTeam.js';
-import Auth from '../utils/auth.js';
-import emailService from '../utils/emailService.js';
-import {errorResponse, successResponse} from '../utils/responseUtils.js';
-import 'dotenv/config';
+import crypto from "crypto";
+import "dotenv/config";
+import User from "../models/User.js";
+import WorkspaceTeam from "../models/WorkspaceTeam.js";
+import Auth from "../utils/auth.js";
+import emailService from "../utils/emailService.js";
+import { errorResponse, successResponse } from "../utils/responseUtils.js";
 
 /**
  * Register a new user
@@ -18,84 +19,84 @@ import 'dotenv/config';
  * @return {Object} Response with user data and tokens or error
  */
 export const register = async (req, res) => {
-    try {
-        const {email, password, firstName, lastName, username} = req.body;
+  try {
+    const { email, password, firstName, lastName, username } = req.body;
 
-        if (!email || !password || !firstName || !lastName || !username) {
-            return errorResponse(
-                res,
-                400,
-                'Email, password, first name, last name, and username are required',
-            );
-        }
-        if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
-            return errorResponse(res, 400, 'Invalid email format');
-        }
-        if (password.length < 8) {
-            return errorResponse(
-                res,
-                400,
-                'Password must be at least 8 characters long',
-            );
-        }
-        const usernameRegex = /^[a-zA-Z0-9_]+$/;
-        if (!usernameRegex.test(username)) {
-            return errorResponse(
-                res,
-                400,
-                'Username can only contain letters, numbers, and underscores',
-            );
-        }
-
-        const sanitizedEmail = req.sanitize(email).toLowerCase();
-        const sanitizedFirstName = req.sanitize(firstName);
-        const sanitizedLastName = req.sanitize(lastName);
-        const sanitizedUsername = req.sanitize(username);
-
-        const user = await User.create({
-            email: sanitizedEmail,
-            password,
-            firstName: sanitizedFirstName,
-            lastName: sanitizedLastName,
-            username: sanitizedUsername,
-        });
-
-        try {
-            await emailService.sendWelcomeEmail(user);
-        } catch (emailError) {
-            console.error('Failed to send welcome email:', emailError);
-        }
-
-        const tokens = await Auth.generateTokenPair(user);
-        res.cookie(
-            'refreshToken',
-            tokens.refreshToken,
-            Auth.getRefreshTokenCookieOptions(),
-        );
-
-        return successResponse(res, {
-            user,
-            accessToken: {token: tokens.accessToken, expiresIn: tokens.expiresIn},
-        });
-    } catch (error) {
-        if (error.name === 'SequelizeUniqueConstraintError') {
-            const field = error.errors?.[0]?.path || 'email or username';
-            return errorResponse(
-                res,
-                400,
-                `An account with this ${field} already exists.`,
-            );
-        }
-        if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).map((err) => err.message);
-            return errorResponse(res, 400, errors.join(', '));
-        }
-        return errorResponse(
-            res,
-            500,
-            'Registration failed due to an internal error.',
-        );
+    if (!email || !password || !firstName || !lastName || !username) {
+      return errorResponse(
+        res,
+        400,
+        "Email, password, first name, last name, and username are required",
+      );
     }
+    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+      return errorResponse(res, 400, "Invalid email format");
+    }
+    if (password.length < 8) {
+      return errorResponse(
+        res,
+        400,
+        "Password must be at least 8 characters long",
+      );
+    }
+    const usernameRegex = /^[a-zA-Z0-9_]+$/;
+    if (!usernameRegex.test(username)) {
+      return errorResponse(
+        res,
+        400,
+        "Username can only contain letters, numbers, and underscores",
+      );
+    }
+
+    const sanitizedEmail = req.sanitize(email).toLowerCase();
+    const sanitizedFirstName = req.sanitize(firstName);
+    const sanitizedLastName = req.sanitize(lastName);
+    const sanitizedUsername = req.sanitize(username);
+
+    const user = await User.create({
+      email: sanitizedEmail,
+      password,
+      firstName: sanitizedFirstName,
+      lastName: sanitizedLastName,
+      username: sanitizedUsername,
+    });
+
+    try {
+      await emailService.sendWelcomeEmail(user);
+    } catch (emailError) {
+      console.error("Failed to send welcome email:", emailError);
+    }
+
+    const tokens = await Auth.generateTokenPair(user);
+    res.cookie(
+      "refreshToken",
+      tokens.refreshToken,
+      Auth.getRefreshTokenCookieOptions(),
+    );
+
+    return successResponse(res, {
+      user,
+      accessToken: { token: tokens.accessToken, expiresIn: tokens.expiresIn },
+    });
+  } catch (error) {
+    if (error.name === "SequelizeUniqueConstraintError") {
+      const field = error.errors?.[0]?.path || "email or username";
+      return errorResponse(
+        res,
+        400,
+        `An account with this ${field} already exists.`,
+      );
+    }
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
+      return errorResponse(res, 400, errors.join(", "));
+    }
+    return errorResponse(
+      res,
+      500,
+      "Registration failed due to an internal error.",
+    );
+  }
 };
 
 /**
@@ -108,29 +109,30 @@ export const register = async (req, res) => {
  * @return {Object} Response with user data and tokens or error
  */
 export const login = async (req, res) => {
-    try {
-        const {email, password} = req.body;
-        if (!email || !password) return errorResponse(res, 400, 'Email and password are required');
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return errorResponse(res, 400, "Email and password are required");
 
-        const user = await User.findByCredentials(email.toLowerCase(), password);
+    const user = await User.findByCredentials(email.toLowerCase(), password);
 
-        // Generate tokens for successful authentication
-        const tokens = await Auth.generateTokenPair(user);
+    // Generate tokens for successful authentication
+    const tokens = await Auth.generateTokenPair(user);
 
-        return successResponse(res, {
-            user,
-            accessToken: {
-                token: tokens.accessToken,
-                expires: tokens.expiresIn,
-            },
-            refreshToken: {
-                token: tokens.refreshToken,
-            },
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        return errorResponse(res, 401, 'Invalid email or password');
-    }
+    return successResponse(res, {
+      user,
+      accessToken: {
+        token: tokens.accessToken,
+        expires: tokens.expiresIn,
+      },
+      refreshToken: {
+        token: tokens.refreshToken,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    return errorResponse(res, 401, "Invalid email or password");
+  }
 };
 
 /**
@@ -140,12 +142,12 @@ export const login = async (req, res) => {
  * @return {Object} Response with success message or error
  */
 export const logout = async (req, res) => {
-    try {
-        res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
-        return successResponse(res, {message: 'Logged out successfully'});
-    } catch (error) {
-        return errorResponse(res, 500, 'Logout failed');
-    }
+  try {
+    res.clearCookie("refreshToken", Auth.getRefreshTokenCookieOptions());
+    return successResponse(res, { message: "Logged out successfully" });
+  } catch (error) {
+    return errorResponse(res, 500, "Logout failed");
+  }
 };
 
 /**
@@ -157,39 +159,48 @@ export const logout = async (req, res) => {
  * @return {Object} Response with new access token or error
  */
 export const refresh = async (req, res) => {
-    const oldRefreshToken = req.cookies.refreshToken;
+  const oldRefreshToken = req.cookies.refreshToken;
 
-    if (!oldRefreshToken) return errorResponse(res, 401, 'Refresh token not found');
+  if (!oldRefreshToken)
+    return errorResponse(res, 401, "Refresh token not found");
 
-    try {
-        const userId = await getUserIdFromRefreshToken(oldRefreshToken);
-        if (!userId) {
-            res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
-            return errorResponse(res, 401, 'Invalid refresh token');
-        }
-
-        const user = await User.findByPk(userId);
-        if (!user) {
-            res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
-            return errorResponse(res, 401, 'User not found for this token');
-        }
-
-        const tokens = await Auth.generateTokenPair(user);
-
-        res.cookie('refreshToken', tokens.refreshToken, Auth.getRefreshTokenCookieOptions());
-        return successResponse(res, {accessToken: {token: tokens.accessToken, expiresIn: tokens.expiresIn}});
-    } catch (error) {
-        res.clearCookie('refreshToken', Auth.getRefreshTokenCookieOptions());
-        if (error.message.includes('Invalid') || error.message.includes('expired')
-        ) {
-            return errorResponse(res, 401, 'Token refresh failed: ' + error.message);
-        }
-        return errorResponse(
-            res,
-            500,
-            'Token refresh failed due to an internal error.',
-        );
+  try {
+    const userId = await getUserIdFromRefreshToken(oldRefreshToken);
+    if (!userId) {
+      res.clearCookie("refreshToken", Auth.getRefreshTokenCookieOptions());
+      return errorResponse(res, 401, "Invalid refresh token");
     }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      res.clearCookie("refreshToken", Auth.getRefreshTokenCookieOptions());
+      return errorResponse(res, 401, "User not found for this token");
+    }
+
+    const tokens = await Auth.generateTokenPair(user);
+
+    res.cookie(
+      "refreshToken",
+      tokens.refreshToken,
+      Auth.getRefreshTokenCookieOptions(),
+    );
+    return successResponse(res, {
+      accessToken: { token: tokens.accessToken, expiresIn: tokens.expiresIn },
+    });
+  } catch (error) {
+    res.clearCookie("refreshToken", Auth.getRefreshTokenCookieOptions());
+    if (
+      error.message.includes("Invalid") ||
+      error.message.includes("expired")
+    ) {
+      return errorResponse(res, 401, "Token refresh failed: " + error.message);
+    }
+    return errorResponse(
+      res,
+      500,
+      "Token refresh failed due to an internal error.",
+    );
+  }
 };
 
 /**
@@ -198,12 +209,12 @@ export const refresh = async (req, res) => {
  * @return {string|null} - User ID or null if token is invalid
  */
 export const getUserIdFromRefreshToken = async (token) => {
-    console.warn(
-        'getUserIdFromRefreshToken needs actual implementation! Token received:',
-        token,
-    );
+  console.warn(
+    "getUserIdFromRefreshToken needs actual implementation! Token received:",
+    token,
+  );
 
-    return null;
+  return null;
 };
 
 /**
@@ -214,18 +225,18 @@ export const getUserIdFromRefreshToken = async (token) => {
  * @return {Object} Response with user data or error
  */
 export const getUser = async (req, res) => {
-    try {
-        const user = await User.findByPk(req.user.id);
-        if (!user) return errorResponse(res, 404, 'User not found');
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (!user) return errorResponse(res, 404, "User not found");
 
-        const workspaceCount = await WorkspaceTeam.count({
-            where: {userId: req.user.id},
-        });
-        return successResponse(res, {user: {...user.toJSON(), workspaceCount}});
-    } catch (error) {
-        console.log('failed: ', error);
-        return errorResponse(res, 500, 'Failed to fetch user');
-    }
+    const workspaceCount = await WorkspaceTeam.count({
+      where: { userId: req.user.id },
+    });
+    return successResponse(res, { user: { ...user.toJSON(), workspaceCount } });
+  } catch (error) {
+    console.log("failed: ", error);
+    return errorResponse(res, 500, "Failed to fetch user");
+  }
 };
 
 /**
@@ -240,221 +251,249 @@ export const getUser = async (req, res) => {
  * @param {string} [req.body.title] - Updated title
  * @param {string} [req.body.about] - Updated about text
  * @param {string} [req.body.location] - Updated location
- * @param {string} [req.body.password] - Current password (required for password change)
- * @param {string} [req.body.newPassword] - New password
  * @param {Object} res - Express response object
  * @return {Object} Response with updated user data or error
  */
 export const updateUserProfile = async (req, res) => {
-    try {
-        const allowedUpdateFields = [
-            'username',
-            'firstName',
-            'lastName',
-            'profilePicture',
-            'title',
-            'about',
-            'location',
-        ];
+  try {
+    const allowedUpdateFields = [
+      "username",
+      "firstName",
+      "lastName",
+      "profilePicture",
+      "title",
+      "about",
+      "location",
+    ];
 
-        const userId = req.user.id;
-        if (!userId) return errorResponse(res, 401, 'Authentication required.');
+    const userId = req.user.id;
+    if (!userId) return errorResponse(res, 401, "Authentication required.");
 
-        const user = await User.findByPk(userId);
-        if (!user) return errorResponse(res, 404, 'User not found');
+    const user = await User.findByPk(userId);
+    if (!user) return errorResponse(res, 404, "User not found");
 
-        const updates = {};
-        const validationErrors = [];
-        let passwordChangeValidated = false;
-        let newPasswordValue = null;
+    const updates = {};
+    const validationErrors = [];
 
-        const currentPasswordAttempt = req.body.password;
-        const newPasswordAttempt = req.body.newPassword;
+    for (const field of allowedUpdateFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        let value = req.body[field];
 
-        if (newPasswordAttempt) {
-            if (!currentPasswordAttempt) {
-                validationErrors.push(
-                    'Current password is required to set a new password.',
-                );
-            } else if (
-                typeof newPasswordAttempt !== 'string' ||
-        newPasswordAttempt.length < 8
-            ) {
-                validationErrors.push(
-                    'New password must be a string and at least 8 characters long.',
-                );
-            } else {
-                if (validationErrors.length === 0) {
-                    const isMatch = await user.isPasswordMatch(currentPasswordAttempt);
-                    if (!isMatch) validationErrors.push('Incorrect current password.');
-                    else {
-                        passwordChangeValidated = true;
-                        newPasswordValue = newPasswordAttempt;
-                    }
-                }
+        const nullableFields = ["title", "about", "location"];
+        if (value === null && nullableFields.includes(field)) {
+          updates[field] = null;
+          continue;
+        }
+
+        value = req.sanitize(value);
+
+        switch (field) {
+          case "username":
+            if (typeof value !== "string" || !value) {
+              validationErrors.push("Username cannot be empty.");
+            } else if (value.length < 3 || value.length > 30) {
+              validationErrors.push(
+                "Username must be between 3 and 30 characters.",
+              );
+            } else if (value !== user.username) {
+              const usernameExists = await User.findOne({
+                where: { username: value },
+              });
+              if (usernameExists) {
+                validationErrors.push("Username already exists.");
+              } else updates.username = value;
             }
-        } else if (currentPasswordAttempt) {
-            validationErrors.push(
-                'New password is required when providing the current password for a change.',
-            );
-        }
+            break;
 
-        for (const field of allowedUpdateFields) {
-            if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-                let value = req.body[field];
+          case "firstName":
+          case "lastName":
+            if (typeof value === "string") updates[field] = value;
+            else validationErrors.push(`${field} must be a string.`);
+            break;
 
-                const nullableFields = ['title', 'about', 'location'];
-                if (value === null && nullableFields.includes(field)) {
-                    updates[field] = null;
-                    continue;
+          case "profilePicture":
+            if (typeof value === "string" && value !== "") {
+              try {
+                if (
+                  field === "profilePicture" &&
+                  value.startsWith("data:image/")
+                ) {
+                  updates[field] = value;
+                } else {
+                  new URL(value);
+                  updates[field] = value;
                 }
+              } catch (e) {
+                validationErrors.push(`Invalid URL format for ${field}.`);
+              }
+            } else validationErrors.push(`${field} must be a string (URL).`);
+            break;
 
-                value = req.sanitize(value);
-
-                switch (field) {
-                case 'username':
-                    if (typeof value !== 'string' || !value) {
-                        validationErrors.push('Username cannot be empty.');
-                    } else if (value.length < 3 || value.length > 30) {
-                        validationErrors.push(
-                            'Username must be between 3 and 30 characters.',
-                        );
-                    } else if (value !== user.username) {
-                        const usernameExists = await User.findOne({
-                            where: {username: value},
-                        });
-                        if (usernameExists) {
-                            validationErrors.push('Username already exists.');
-                        } else updates.username = value;
-                    }
-                    break;
-
-                case 'firstName':
-                case 'lastName':
-                    if (typeof value === 'string') updates[field] = value;
-                    else validationErrors.push(`${field} must be a string.`);
-                    break;
-
-                case 'profilePicture':
-                    if (typeof value === 'string' && value !== '') {
-                        try {
-                            if (
-                                field === 'profilePicture' &&
-                  value.startsWith('data:image/')
-                            ) {
-                                updates[field] = value;
-                            } else {
-                                new URL(value);
-                                updates[field] = value;
-                            }
-                        } catch (e) {
-                            validationErrors.push(`Invalid URL format for ${field}.`);
-                        }
-                    } else validationErrors.push(`${field} must be a string (URL).`);
-                    break;
-
-                case 'title':
-                case 'about':
-                case 'location':
-                    if (typeof value === 'string') updates[field] = value;
-                    else if (value !== null) {
-                        validationErrors.push(`${field} must be a string.`);
-                    }
-                    break;
-                }
+          case "title":
+          case "about":
+          case "location":
+            if (typeof value === "string") updates[field] = value;
+            else if (value !== null) {
+              validationErrors.push(`${field} must be a string.`);
             }
+            break;
         }
-
-        if (validationErrors.length > 0) {
-            return errorResponse(res, 400, validationErrors.join(' '));
-        }
-
-        const hasProfileUpdates = Object.keys(updates).length > 0;
-        if (!hasProfileUpdates && !passwordChangeValidated) {
-            return successResponse(res, {
-                message: 'No changes detected or applied.',
-                user: user.toJSON(),
-            });
-        }
-
-        if (hasProfileUpdates) Object.assign(user, updates);
-        if (passwordChangeValidated && newPasswordValue) {
-            user.password = newPasswordValue;
-        }
-        await user.save();
-
-        return successResponse(res, {
-            message: 'Profile updated successfully',
-            user: user.toJSON(),
-        });
-    } catch (error) {
-        if (
-            error.name === 'SequelizeValidationError' ||
-      error.name === 'SequelizeUniqueConstraintError'
-        ) {
-            const messages = error.errors.map((e) => e.message);
-            return errorResponse(res, 400, messages.join(', '));
-        }
-        return errorResponse(res, 500, 'Failed to update profile');
+      }
     }
+
+    if (validationErrors.length > 0) {
+      return errorResponse(res, 400, validationErrors.join(" "));
+    }
+
+    const hasProfileUpdates = Object.keys(updates).length > 0;
+    if (!hasProfileUpdates) {
+      return successResponse(res, {
+        message: "No changes detected or applied.",
+        user: user.toJSON(),
+      });
+    }
+
+    Object.assign(user, updates);
+    await user.save();
+
+    return successResponse(res, {
+      message: "Profile updated successfully",
+      user: user.toJSON(),
+    });
+  } catch (error) {
+    if (
+      error.name === "SequelizeValidationError" ||
+      error.name === "SequelizeUniqueConstraintError"
+    ) {
+      const messages = error.errors.map((e) => e.message);
+      return errorResponse(res, 400, messages.join(", "));
+    }
+    return errorResponse(res, 500, "Failed to update profile");
+  }
 };
 
 /**
- * Update FCM token for the authenticated user
+ * Request a password reset token
  * @param {Object} req - Express request object
- * @param {Object} req.body - Request body
- * @param {string} req.body.fcmToken - FCM token to update
- * @param {Object} req.user - Authenticated user
+ * @param {string} req.body.email - User email
  * @param {Object} res - Express response object
- * @return {Object} Response with success message or error
+ * @return {Object} Response with success message
  */
-export const updateFCMToken = async (req, res) => {
-    try {
-        const {fcmToken} = req.body;
-        const userId = req.user.id;
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return errorResponse(res, 400, "Email is required");
 
-        if (!fcmToken) {
-            return errorResponse(res, 400, 'FCM token is required');
-        }
-
-        await User.update(
-            {fcmToken},
-            {where: {id: userId}},
-        );
-
-        return successResponse(res, 200, 'FCM token updated successfully');
-    } catch (error) {
-        console.error('Update FCM Token Error:', error);
-        return errorResponse(res, 500, 'Failed to update FCM token');
+    const user = await User.findOne({ where: { email: email.toLowerCase() } });
+    if (!user) {
+      // Return success even if user not found to prevent email enumeration
+      return successResponse(res, {
+        message:
+          "If an account exists with that email, a reset link has been sent.",
+      });
     }
+
+    const resetToken = await user.generateResetPasswordToken();
+    await user.save();
+
+    const resetUrl = `${process.env.FRONTEND_URL || process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+    await emailService.sendPasswordResetEmail(user, resetUrl);
+
+    return successResponse(res, {
+      message:
+        "If an account exists with that email, a reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return errorResponse(res, 500, "Failed to process forgot password request");
+  }
 };
 
 /**
- * Update Knock token for the authenticated user
+ * Reset password using a valid token
  * @param {Object} req - Express request object
- * @param {Object} req.body - Request body
- * @param {string} req.body.knockToken - Knock token to update
- * @param {Object} req.user - Authenticated user
+ * @param {string} req.body.token - Reset token
+ * @param {string} req.body.password - New password
  * @param {Object} res - Express response object
- * @return {Object} Response with success message or error
+ * @return {Object} Response with success message
  */
-export const updateKnockToken = async (req, res) => {
-    try {
-        const {knockToken} = req.body;
-        const userId = req.user.id;
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password)
+      return errorResponse(res, 400, "Token and password are required");
 
-        if (!knockToken) {
-            return errorResponse(res, 400, 'Knock token is required');
-        }
-
-        await User.update(
-            {knockToken},
-            {where: {id: userId}},
-        );
-
-        return successResponse(res, 200, 'Knock token updated successfully');
-    } catch (error) {
-        console.error('Update Knock Token Error:', error);
-        return errorResponse(res, 500, 'Failed to update Knock token');
+    if (password.length < 8) {
+      return errorResponse(
+        res,
+        400,
+        "Password must be at least 8 characters long",
+      );
     }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const user = await User.findOne({
+      where: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { [Symbol.for("gte")]: new Date() },
+      },
+    });
+
+    if (!user) {
+      return errorResponse(res, 400, "Invalid or expired password reset token");
+    }
+
+    user.password = password;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    return successResponse(res, {
+      message: "Password has been reset successfully.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return errorResponse(res, 500, "Failed to reset password");
+  }
+};
+
+/**
+ * Change password for an authenticated user
+ * @param {Object} req - Express request object
+ * @param {string} req.body.currentPassword - Current password
+ * @param {string} req.body.newPassword - New password
+ * @param {Object} res - Express response object
+ * @return {Object} Response with success message
+ */
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return errorResponse(res, 400, "Current and new passwords are required");
+    }
+
+    if (newPassword.length < 8) {
+      return errorResponse(
+        res,
+        400,
+        "New password must be at least 8 characters long",
+      );
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) return errorResponse(res, 404, "User not found");
+
+    const isMatch = await user.isPasswordMatch(currentPassword);
+    if (!isMatch) return errorResponse(res, 400, "Incorrect current password");
+
+    user.password = newPassword;
+    await user.save();
+
+    return successResponse(res, { message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return errorResponse(res, 500, "Failed to change password");
+  }
 };

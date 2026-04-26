@@ -22,6 +22,11 @@ import {
 } from '../controllers/statisticsController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateWorkspaceInput} from '../middleware/validationMiddleware.js';
+import {
+    checkMemberMiddleware,
+    checkAdminMiddleware,
+    checkSuperAdminMiddleware,
+} from '../middleware/workspaceMiddleware.js';
 import tagRoutes from './tagRoutes.js';
 
 const router = new express.Router();
@@ -33,31 +38,31 @@ router.get('/', getWorkspaces);
 router.post('/', validateWorkspaceInput, addNewWorkspace);
 
 // --- Specific Workspace Operations (by Slug) ---
-router.get('/:slug', getWorkspace);
-router.put('/:slug', validateWorkspaceInput, updateWorkspace);
-router.delete('/:slug', deleteWorkspace);
-router.get('/:slug/activities', getWorkspaceActivities);
-router.get('/:slug/export/csv', exportWorkspaceDataCSV);
+router.get('/:slug', checkMemberMiddleware, getWorkspace);
+router.put('/:slug', checkSuperAdminMiddleware, validateWorkspaceInput, updateWorkspace);
+router.delete('/:slug', checkSuperAdminMiddleware, deleteWorkspace);
+router.get('/:slug/activities', checkMemberMiddleware, getWorkspaceActivities);
+router.get('/:slug/export/csv', checkAdminMiddleware, exportWorkspaceDataCSV);
 
 // --- Tag Management (by Workspace Slug) ---
-router.use('/:workspaceSlug/tags', tagRoutes);
+router.use('/:workspaceSlug/tags', checkMemberMiddleware, tagRoutes);
 
 // --- Team Management (by Workspace Slug) ---
-router.get('/:slug/team', getWorkspaceTeam);
-router.get('/:slug/team/comprehensive', getComprehensiveTeamMembers);
-router.get('/:slug/team/statistics', getTeamStatistics);
-router.post('/:slug/team', addTeamMember);
-router.delete('/:slug/team/:userIdToRemove', removeTeamMember);
+router.get('/:slug/team', checkMemberMiddleware, getWorkspaceTeam);
+router.get('/:slug/team/comprehensive', checkAdminMiddleware, getComprehensiveTeamMembers);
+router.get('/:slug/team/statistics', checkAdminMiddleware, getTeamStatistics);
+router.post('/:slug/team', checkAdminMiddleware, addTeamMember);
+router.delete('/:slug/team/:userIdToRemove', checkAdminMiddleware, removeTeamMember);
 
 // --- Member-specific data ---
-router.get('/:slug/members/:memberId/tasks', getUserTasks);
-router.get('/:slug/members/:memberId/activities', getUserWorkspaceActivities);
+router.get('/:slug/members/:memberId/tasks', checkMemberMiddleware, getUserTasks);
+router.get('/:slug/members/:memberId/activities', checkMemberMiddleware, getUserWorkspaceActivities);
 
 // --- Admin Role Management (by Workspace Slug & User ID) ---
-router.post('/:slug/admins/:userId', promoteToAdmin);
-router.delete('/:slug/admins/:userId', demoteFromAdmin);
+router.post('/:slug/admins/:userId', checkSuperAdminMiddleware, promoteToAdmin);
+router.delete('/:slug/admins/:userId', checkSuperAdminMiddleware, demoteFromAdmin);
 
 // statistics
-router.get('/:slug/statistics', getWorkspaceStatistics);
+router.get('/:slug/statistics', checkMemberMiddleware, getWorkspaceStatistics);
 
 export default router;

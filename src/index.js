@@ -1,5 +1,6 @@
 /* eslint-disable require-jsdoc */
 import swaggerUi from 'swagger-ui-express';
+import fs from 'fs';
 import YAML from 'yamljs';
 import path from 'path';
 import {fileURLToPath} from 'url';
@@ -8,6 +9,8 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import 'dotenv/config';
 import expressSanitizer from 'express-sanitizer';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 import auth from './routes/authRoutes.js';
 import user from './routes/userRoutes.js';
@@ -18,6 +21,7 @@ import attachmentRoutes from './routes/attachmentRoutes.js';
 import statisticsRoutes from './routes/statisticsRoutes.js';
 import pusherRoutes from './routes/pusherRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import mediaRoutes from './routes/mediaRoutes.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -30,7 +34,30 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 
 // CORS middleware
-app.use(cors());
+const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost:3000'];
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+}));
+
+// Helmet middleware for secure HTTP headers
+app.use(helmet());
+
+// Global Rate limiting
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // Limit each IP to 1000 requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
+});
+app.use(globalLimiter);
 
 // Sanitizer middleware
 app.use(expressSanitizer());
@@ -39,7 +66,7 @@ app.use(expressSanitizer());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const swaggerDocument = YAML.load(path.join(__dirname, '../openapi.yaml'));
+const swaggerDocument = JSON.parse(fs.readFileSync(path.join(__dirname, '../swagger-output.json'), 'utf8'));
 
 // Set up model associations
 setupAssociations();
@@ -61,5 +88,24 @@ app.use('/invite', invite);
 app.use('/attachments', attachmentRoutes);
 app.use('/api/pusher', pusherRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/media', mediaRoutes);
 
-app.listen(port, () => console.log(`Server is running on port ${port}`));
+// Global Error Handling Middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled Error:', err);
+    const status = err.status || 500;
+    
+    // In production, mask internal server errors
+    let message = err.message || 'Internal Server Error';
+    if (status === 500 && process.env.NODE_ENV === 'production') {
+        message = 'An unexpected error occurred. Please try again later.';
+    }
+    
+    res.status(status).json({ success: false, error: message });
+});
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+    app.listen(port, () => console.log(`Server is running on port ${port}`));
+}
+
+export default app;

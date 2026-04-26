@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-    register, login, logout, refresh,
+    register, login, logout, refresh, forgotPassword, resetPassword, changePassword,
 } from '../controllers/userController.js';
 import {requestLoginWithAuthn, loginWithAuthn, authLimiter} from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
@@ -17,6 +17,11 @@ router.post('/register', validateAuthInput, register);
 router.post('/login', validateAuthInput, login);
 router.post('/logout', authMiddleware, logout);
 router.post('/refresh', validateAuthInput, refresh);
+
+// Password management routes
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
+router.post('/change-password', authMiddleware, changePassword);
 
 // WebAuthn routes
 router.post('/authn/request-login', requestLoginWithAuthn);

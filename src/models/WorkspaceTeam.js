@@ -42,7 +42,7 @@ const WorkspaceTeam = sequelize.define('WorkspaceTeam', {
     indexes: [
         {
             unique: true,
-            fields: ['userId', 'workspaceId'],
+            fields: ['user_id', 'workspace_id'],
         },
     ],
 });

@@ -250,6 +250,15 @@ export const updateTask = async (req, res) => {
             return errorResponse(res, 404, 'Task not found in this workspace');
         }
 
+        const membership = await sequelize.models.WorkspaceTeam.findOne({
+            where: {workspaceId, userId: req.user.id},
+        });
+        const isAdmin = membership && ['admin', 'creator'].includes(membership.role);
+
+        if (task.createdById !== req.user.id && !isAdmin) {
+            return errorResponse(res, 403, 'Only the task creator or workspace admins can update this task');
+        }
+
         const originalData = task.get({plain: true});
         const originalAssigneeIds = originalData.assignees.map((assignee) => assignee.id);
         const originalTagIds = originalData.tags.map((tag) => tag.id);
@@ -485,12 +494,20 @@ export const deleteTask = async (req, res) => {
         const task = await Task.findOne({where: {id: taskId, workspaceId}});
         if (!task) return errorResponse(res, 404, 'Task not found in this workspace');
 
+        const membership = await sequelize.models.WorkspaceTeam.findOne({
+            where: {workspaceId, userId: req.user.id},
+        });
+        const isAdmin = membership && ['admin', 'creator'].includes(membership.role);
+
+        if (task.createdById !== req.user.id && !isAdmin) {
+            return errorResponse(res, 403, 'Only the task creator or workspace admins can delete this task');
+        }
+
         const meta = {taskId: task.id, taskTitle: task.title};
 
         await TaskAssignee.destroy({where: {taskId: task.id}});
         await task.destroy();
 
-        await logTaskActivity(task.id, req.user.id, 'deleted', meta);
         await logWorkspaceActivity(workspaceId, req.user.id, 'task_deleted', meta);
 
         return successResponse(res, {message: 'Task deleted successfully'});
@@ -1012,7 +1029,6 @@ export const exportTasksCSV = async (req, res) => {
 
         const statusFilter = parseQueryArray(req.query.status);
         const priorityFilter = parseQueryArray(req.query.priority);
-        const tagsFilter = parseQueryArray(req.query.tags);
         const currentUserId = req.user?.id;
 
         const whereConditions = {workspaceId};
