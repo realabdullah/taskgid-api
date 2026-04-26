@@ -95,10 +95,22 @@ app.use('/media', mediaRoutes);
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
-    console.error('Unhandled Error:', err);
+    // Log the full error with request context for debugging
+    const sanitizedBody = { ...req.body };
+    const sensitiveFields = ['password', 'newPassword', 'oldPassword', 'token', 'refreshToken'];
+    sensitiveFields.forEach(field => {
+        if (sanitizedBody[field]) sanitizedBody[field] = '********';
+    });
+
+    console.error(`[${new Date().toISOString()}] ${req.method} ${req.path} - Unhandled Error:`, {
+        message: err.message,
+        stack: err.stack,
+        body: sanitizedBody,
+    });
+
     const status = err.status || 500;
     
-    // In production, mask internal server errors
+    // In production, mask internal server errors for security
     let message = err.message || 'Internal Server Error';
     if (status === 500 && process.env.NODE_ENV === 'production') {
         message = 'An unexpected error occurred. Please try again later.';

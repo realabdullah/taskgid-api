@@ -79,6 +79,7 @@ export const register = async (req, res) => {
       accessToken: { token: tokens.accessToken, expiresIn: tokens.expiresIn },
     });
   } catch (error) {
+    console.error("Registration error:", error);
     if (error.name === "SequelizeUniqueConstraintError") {
       const field = error.errors?.[0]?.path || "email or username";
       return errorResponse(
@@ -91,10 +92,17 @@ export const register = async (req, res) => {
       const errors = Object.values(error.errors).map((err) => err.message);
       return errorResponse(res, 400, errors.join(", "));
     }
+
+    // Handle generic errors (like the one from the User model hook)
+    const status = error.status || 500;
+    const message = status === 500 
+      ? (process.env.NODE_ENV === 'development' ? error.message : "Registration failed due to an internal error.")
+      : error.message;
+
     return errorResponse(
       res,
-      500,
-      "Registration failed due to an internal error.",
+      status,
+      message,
     );
   }
 };
