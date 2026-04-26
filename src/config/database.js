@@ -1,46 +1,50 @@
-import {Sequelize} from 'sequelize';
-import pg from 'pg';
-import 'dotenv/config';
+import "dotenv/config";
+import pg from "pg";
+import { Sequelize } from "sequelize";
 
 // Database configuration
 const sequelize = new Sequelize(
-    process.env.DB_NAME,
-    process.env.DB_USER,
-    process.env.DB_PASSWORD,
-    {
-        host: process.env.DB_HOST,
-        port: process.env.DB_PORT,
-        dialect: 'postgres',
-        dialectModule: pg,
-        dialectOptions: {
-            ssl: process.env.DB_SSL === 'true' || process.env.NODE_ENV === 'production' ? {
-                rejectUnauthorized: false,
-            } : false,
-        },
-        logging: process.env.NODE_ENV === 'development' ? console.log : false,
-        pool: {
-            max: 3,
-            min: 0,
-            acquire: 30000,
-            idle: 10000,
-        },
-        define: {
-            timestamps: true,
-            underscored: true,
-            underscoredAll: true,
-            freezeTableName: true,
-        },
+  process.env.DB_NAME,
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
+  {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    dialect: "postgres",
+    dialectModule: pg,
+    dialectOptions: {
+      ssl:
+        process.env.DB_SSL === "true" || process.env.NODE_ENV === "production"
+          ? {
+              rejectUnauthorized: false,
+            }
+          : false,
+      connectionTimeoutMillis: 30000,
     },
+    logging: process.env.NODE_ENV === "development" ? console.log : false,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 60000,
+      idle: 10000,
+    },
+    define: {
+      timestamps: true,
+      underscored: true,
+      underscoredAll: true,
+      freezeTableName: true,
+    },
+  },
 );
 
 // Test database connection
 const testConnection = async () => {
-    try {
-        await sequelize.authenticate();
-        console.log('Database connection established successfully.');
-    } catch (error) {
-        console.error('Unable to connect to the database:', error);
-    }
+  try {
+    await sequelize.authenticate();
+    console.log("Database connection established successfully.");
+  } catch (error) {
+    console.error("Unable to connect to the database:", error);
+  }
 };
 
 testConnection();
@@ -51,13 +55,13 @@ testConnection();
  * @return {Promise<void>}
  */
 export const syncDatabase = async (force = false) => {
-    try {
-        await sequelize.sync({force});
-        console.log('Database synced successfully');
-    } catch (error) {
-        console.error('Error syncing database:', error);
-        throw error;
-    }
+  try {
+    await sequelize.sync({ force });
+    console.log("Database synced successfully");
+  } catch (error) {
+    console.error("Error syncing database:", error);
+    throw error;
+  }
 };
 
 export default sequelize;
