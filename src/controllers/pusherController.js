@@ -26,15 +26,11 @@ export const authenticatePusher = (req, res) => {
             });
         }
 
-        if (channelName.startsWith('private-user-')) {
-            const channelUserId = channelName.replace('private-user-', '');
-
-            if (channelUserId !== req.user.id) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Unauthorized channel access',
-                });
-            }
+        if (channelName !== `private-user-${req.user.id}`) {
+            return res.status(403).json({
+                success: false,
+                message: 'Unauthorized channel access',
+            });
         }
 
         const auth = pusher.authorizeChannel(socketId, channelName);

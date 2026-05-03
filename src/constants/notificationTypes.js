@@ -12,6 +12,7 @@ export const NOTIFICATION_TYPES = {
 
   // Workspace related notifications
   WORKSPACE_INVITE: "workspace-invite",
+  WORKSPACE_INVITE_DECLINED: "workspace-invite-declined",
   WORKSPACE_JOINED: "workspace-joined",
   WORKSPACE_LEFT: "workspace-left",
   WORKSPACE_ROLE_CHANGED: "workspace-role-changed",
@@ -76,6 +77,11 @@ export const NOTIFICATION_DATA = {
       "inviterId",
       "inviterName",
     ],
+  },
+  [NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED]: {
+    title: "Invitation Declined",
+    message: "{{userName}} declined the invitation to {{workspaceName}}",
+    requiredFields: ["workspaceId", "workspaceName", "userId", "userName"],
   },
   [NOTIFICATION_TYPES.WORKSPACE_JOINED]: {
     title: "New Workspace Member",

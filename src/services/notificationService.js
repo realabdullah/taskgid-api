@@ -77,6 +77,7 @@ class NotificationService {
       [NOTIFICATION_TYPES.TASK_MENTIONED]: "mention",
       [NOTIFICATION_TYPES.COMMENT_MENTIONED]: "mention",
       [NOTIFICATION_TYPES.WORKSPACE_INVITE]: "workspace_invite",
+      [NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED]: "workspace_invite_declined",
       [NOTIFICATION_TYPES.WORKSPACE_ROLE_CHANGED]: "workspace_role_changed",
     };
     return typeMap[type] || "task_updated";
@@ -127,6 +128,14 @@ class NotificationService {
           return data.inviterName && data.workspaceName
             ? `${data.inviterName} invited you to workspace: ${data.workspaceName}`
             : "You were invited to a workspace";
+        case NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED:
+          return data.userName && data.workspaceName
+            ? `${data.userName} declined the invitation to ${data.workspaceName}`
+            : "An invitation was declined";
+        case NOTIFICATION_TYPES.WORKSPACE_JOINED:
+          return data.userName && data.workspaceName
+            ? `${data.userName} joined the workspace: ${data.workspaceName}`
+            : "A new member joined the workspace";
         default:
           return `New notification (${event})`;
       }
@@ -203,22 +212,23 @@ class NotificationService {
    */
   mapEventToNovuWorkflow(eventType) {
     const mappings = {
-      [NOTIFICATION_TYPES.TASK_ASSIGNED]: "task-assigned",
+      [NOTIFICATION_TYPES.TASK_ASSIGNED]: "new-task-assigned",
       [NOTIFICATION_TYPES.TASK_UPDATED]: "task-updated",
       [NOTIFICATION_TYPES.TASK_DELETED]: "task-deleted",
       [NOTIFICATION_TYPES.TASK_COMPLETED]: "task-completed",
       [NOTIFICATION_TYPES.TASK_COMMENTED]: "task-commented",
       [NOTIFICATION_TYPES.TASK_MENTIONED]: "task-mentioned",
-      [NOTIFICATION_TYPES.WORKSPACE_INVITE]: "workspace-invite",
-      [NOTIFICATION_TYPES.WORKSPACE_JOINED]: "workspace-joined",
-      [NOTIFICATION_TYPES.WORKSPACE_LEFT]: "workspace-left",
-      [NOTIFICATION_TYPES.WORKSPACE_ROLE_CHANGED]: "workspace-role-changed",
-      [NOTIFICATION_TYPES.COMMENT_CREATED]: "comment-created",
+      [NOTIFICATION_TYPES.WORKSPACE_INVITE]: "workspace-invitation",
+      [NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED]: "workspace-invite-declined",
+      [NOTIFICATION_TYPES.WORKSPACE_JOINED]: "new-workspace-member",
+      [NOTIFICATION_TYPES.WORKSPACE_LEFT]: "member-left-workspace",
+      [NOTIFICATION_TYPES.WORKSPACE_ROLE_CHANGED]: "workspace-role-updated",
+      [NOTIFICATION_TYPES.COMMENT_CREATED]: "new-comment",
       [NOTIFICATION_TYPES.COMMENT_UPDATED]: "comment-updated",
       [NOTIFICATION_TYPES.COMMENT_DELETED]: "comment-deleted",
       [NOTIFICATION_TYPES.COMMENT_LIKED]: "comment-liked",
-      [NOTIFICATION_TYPES.COMMENT_MENTIONED]: "comment-mentioned",
-      [NOTIFICATION_TYPES.USER_MENTIONED]: "user-mentioned",
+      [NOTIFICATION_TYPES.COMMENT_MENTIONED]: "mentioned-in-comment",
+      [NOTIFICATION_TYPES.USER_MENTIONED]: "you-were-mentioned",
     };
     return mappings[eventType] || null;
   }

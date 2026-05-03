@@ -52,6 +52,7 @@ async function freshSyncNovu() {
         [NOTIFICATION_TYPES.COMMENT_LIKED]: 'comment-liked',
         [NOTIFICATION_TYPES.COMMENT_MENTIONED]: 'mentioned-in-comment',
         [NOTIFICATION_TYPES.USER_MENTIONED]: 'you-were-mentioned',
+        [NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED]: 'workspace-invite-declined',
     };
 
     console.log('Creating workflows fresh...');

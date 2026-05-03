@@ -1,5 +1,5 @@
 import express from 'express';
-import {inviteUser, acceptInvite, getPendingInvitations} from '../controllers/inviteController.js';
+import {inviteUser, inviteUsersBulk, acceptInvite, declineInvite, getPendingInvitations} from '../controllers/inviteController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import {validateInviteInput} from '../middleware/validationMiddleware.js';
 
@@ -10,6 +10,8 @@ router.use(authMiddleware);
 
 router.get('/pending', getPendingInvitations);
 router.post('/', validateInviteInput, inviteUser);
+router.post('/bulk', inviteUsersBulk);
 router.post('/accept', acceptInvite);
+router.post('/decline', declineInvite);
 
 export default router;

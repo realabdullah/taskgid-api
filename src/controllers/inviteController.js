@@ -71,6 +71,88 @@ const updateActivityLogDetails = async (
   }
 };
 
+const processSingleInvite = async (email, workspace, inviterUser) => {
+  const pendingInvite = await Invite.findOne({
+    where: { email, workspaceId: workspace.id, used: false },
+  });
+  if (pendingInvite) {
+    throw new Error(
+      `User ${email} already has a pending invite to this workspace`,
+    );
+  }
+
+  const existingUser = await User.findOne({ where: { email } });
+  if (existingUser) {
+    const existingMember = await WorkspaceTeam.findOne({
+      where: { userId: existingUser.id, workspaceId: workspace.id },
+    });
+    if (existingMember) {
+      throw new Error(`User ${email} is already a member of this workspace`);
+    }
+  }
+
+  const token = jwt.sign(
+    { email, workspaceId: workspace.id },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    },
+  );
+
+  const inviteUrl = `${process.env.FRONTEND_URL}/accept-invite/${token}`;
+
+  const newInvite = await Invite.create({
+    email,
+    token,
+    workspaceId: workspace.id,
+    invitedById: inviterUser.id,
+  });
+
+  const activityDetails = { invitedEmail: email, inviteId: newInvite.id };
+  if (existingUser) {
+    activityDetails.invitedName = `${existingUser.firstName || ""} ${
+      existingUser.lastName || ""
+    }`.trim();
+
+    await notificationService.sendNotification(
+      existingUser.id,
+      NOTIFICATION_TYPES.WORKSPACE_INVITE,
+      {
+        workspaceId: workspace.id,
+        workspaceName: workspace.title,
+        inviterId: inviterUser.id,
+        inviterName: inviterUser.firstName || inviterUser.username,
+      },
+    );
+  } else {
+    activityDetails.invitedName = null;
+  }
+
+  await logWorkspaceActivity(
+    workspace.id,
+    inviterUser.id,
+    "member_invited",
+    activityDetails,
+  );
+
+  const inviteeDetails = { email, name: existingUser?.firstName };
+  try {
+    await emailService.sendWorkspaceInviteEmail(
+      inviteeDetails,
+      inviterUser,
+      workspace,
+      inviteUrl,
+    );
+  } catch (error) {
+    console.warn(
+      `Failed to send invite email to ${email}, but invite record created.`,
+      error,
+    );
+  }
+
+  return { success: true, email };
+};
+
 const inviteUser = async (req, res) => {
   const { email, workspaceId } = req.body;
   const inviterUser = req.user;
@@ -90,92 +172,62 @@ const inviteUser = async (req, res) => {
       });
     }
 
-    const pendingInvite = await Invite.findOne({
-      where: { email, workspaceId, used: false },
-    });
-    console.log("pendingInvite", pendingInvite);
-    if (pendingInvite) {
-      return res
-        .status(400)
-        .json({ error: "User already has a pending invite to this workspace" });
+    const result = await processSingleInvite(email, workspace, inviterUser);
+    res.status(201).json({ message: "User invited successfully", ...result });
+  } catch (error) {
+    console.error("Invite User error:", error);
+    res
+      .status(400)
+      .json({ error: error.message || "Failed to send invitation" });
+  }
+};
+
+const inviteUsersBulk = async (req, res) => {
+  const { emails, workspaceId } = req.body;
+  const inviterUser = req.user;
+
+  if (!Array.isArray(emails)) {
+    return errorResponse(res, 400, "Emails must be an array");
+  }
+
+  if (emails.length > 10) {
+    return errorResponse(res, 400, "Maximum 10 invitations allowed at a time");
+  }
+
+  try {
+    const workspace = await Workspace.findByPk(workspaceId);
+    if (!workspace) {
+      return errorResponse(res, 404, "Workspace not found");
     }
 
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      const existingMember = await WorkspaceTeam.findOne({
-        where: { userId: existingUser.id, workspaceId },
-      });
-      if (existingMember) {
-        return res
-          .status(400)
-          .json({ error: "User is already a member of this workspace" });
+    const requestorRole = await WorkspaceTeam.findOne({
+      where: { userId: inviterUser.id, workspaceId },
+    });
+    if (!requestorRole || !["creator", "admin"].includes(requestorRole.role)) {
+      return errorResponse(
+        res,
+        403,
+        "Only workspace admins or the creator can send invites",
+      );
+    }
+
+    const results = [];
+    for (const email of emails) {
+      try {
+        const result = await processSingleInvite(email, workspace, inviterUser);
+        results.push({ email, status: "success", message: "Invite sent" });
+      } catch (error) {
+        results.push({ email, status: "failed", error: error.message });
       }
     }
 
-    const token = jwt.sign({ email, workspaceId }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
+    res.status(207).json({
+      message: "Bulk invitation process completed",
+      results,
     });
-
-    const inviteUrl = `${process.env.FRONTEND_URL}/accept-invite/${token}`;
-
-    const newInvite = await Invite.create({
-      email,
-      token,
-      workspaceId: workspace.id,
-      invitedById: inviterUser.id,
-    });
-
-    const activityDetails = { invitedEmail: email, inviteId: newInvite.id };
-    if (existingUser) {
-      activityDetails.invitedName = `${existingUser.firstName || ""} ${
-        existingUser.lastName || ""
-      }`.trim();
-
-      await notificationService.sendNotification(
-        existingUser.id,
-        NOTIFICATION_TYPES.WORKSPACE_INVITE,
-        {
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-          inviterId: inviterUser.id,
-          inviterName: inviterUser.firstName || inviterUser.username,
-        },
-      );
-    } else {
-      activityDetails.invitedName = null;
-    }
-
-    await logWorkspaceActivity(
-      workspace.id,
-      inviterUser.id,
-      "member_invited",
-      activityDetails,
-    );
-
-    const inviteeDetails = { email, name: existingUser?.firstName };
-    try {
-      await emailService.sendWorkspaceInviteEmail(
-        inviteeDetails,
-        inviterUser,
-        workspace,
-        inviteUrl,
-      );
-    } catch (error) {
-      console.warn(
-        `Failed to send invite email to ${email} via Zepto, but invite record created.`,
-        error,
-      );
-    }
-
-    res.status(201).json({ message: "User invited successfully" });
   } catch (error) {
-    console.error("Invite User error:", error);
-    if (error.name === "SequelizeUniqueConstraintError") {
-      return res.status(400).json({
-        error: "Database constraint error (likely duplicate invite attempt).",
-      });
-    }
-    res.status(500).json({ error: "Server error during invitation process" });
+    console.error("Bulk Invite Error:", error);
+    return errorResponse(res, 500, "Server error during bulk invitation");
   }
 };
 
@@ -289,7 +341,7 @@ const acceptInvite = async (req, res) => {
         NOTIFICATION_TYPES.WORKSPACE_JOINED,
         {
           workspaceId: workspace.id,
-          workspaceName: workspace.name,
+          workspaceName: workspace.title,
           userId: user.id,
           userName: joinedUserName,
         },
@@ -301,9 +353,16 @@ const acceptInvite = async (req, res) => {
       );
     }
 
+    let resetToken = null;
+    if (isNewUser) {
+      resetToken = await user.generateResetPasswordToken();
+      await user.save();
+    }
+
     return successResponse(res, {
       message: "Invite accepted successfully",
       isNewUser,
+      resetToken,
     });
   } catch (error) {
     console.error("Accept invite error:", error);
@@ -376,4 +435,72 @@ const getPendingInvitations = async (req, res) => {
   }
 };
 
-export { acceptInvite, getPendingInvitations, inviteUser };
+const declineInvite = async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return errorResponse(res, 400, "Invite token is required");
+  }
+
+  try {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return errorResponse(res, 401, "Invalid or expired invite token");
+    }
+
+    const invite = await Invite.findOne({ where: { token, used: false } });
+    if (!invite) {
+      return errorResponse(res, 404, "Invite not found or already used");
+    }
+
+    const { email, workspaceId } = decoded;
+
+    const workspace = await Workspace.findByPk(workspaceId);
+    if (!workspace) {
+      return errorResponse(res, 404, "Associated workspace not found");
+    }
+
+    invite.used = true;
+    await invite.save();
+
+    // Log activity
+    await logWorkspaceActivity(
+      workspace.id,
+      invite.invitedById, // Log against the inviter or system
+      "member_invited_declined",
+      { invitedEmail: email, inviteId: invite.id },
+    );
+
+    // Notify the inviter if the decliner has an account
+    const user = await User.findOne({ where: { email } });
+    if (user && invite.invitedById) {
+      await notificationService.sendNotification(
+        invite.invitedById,
+        NOTIFICATION_TYPES.WORKSPACE_INVITE_DECLINED,
+        {
+          workspaceId: workspace.id,
+          workspaceName: workspace.title,
+          userId: user.id,
+          userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.username,
+        },
+      );
+    }
+
+    return successResponse(res, {
+      message: "Invite declined successfully",
+    });
+  } catch (error) {
+    console.error("Decline invite error:", error);
+    return errorResponse(res, 500, "Failed to decline invite due to server error");
+  }
+};
+
+export {
+  acceptInvite,
+  declineInvite,
+  getPendingInvitations,
+  inviteUser,
+  inviteUsersBulk,
+};
