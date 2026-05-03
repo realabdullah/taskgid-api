@@ -254,7 +254,7 @@ const acceptInvite = async (req, res) => {
     const { email, workspaceId } = decoded;
 
     const workspace = await Workspace.findByPk(workspaceId, {
-      attributes: ["id", "name", "userId"],
+      attributes: ["id", "title", "userId"],
       include: [{ model: User, as: "user", attributes: ["id", "firstName"] }],
     });
     if (!workspace) {
