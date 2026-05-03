@@ -252,7 +252,10 @@ class NotificationService {
 
       const finalData = {
         ...data,
-        message: notification?.message || data.message,
+        message:
+          notification?.message ||
+          data.message ||
+          this.generateDefaultMessage(event, data),
       };
 
       // 1. Pusher for real-time updates (e.g., live comments on the frontend)

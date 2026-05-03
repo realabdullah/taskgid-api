@@ -60,8 +60,6 @@ async function freshSyncNovu() {
         const data = NOTIFICATION_DATA[type];
         if (!data) continue;
 
-        const formattedMessage = data.message.replace(/{{/g, '{{payload.');
-        
         const emailHtml = `<!doctype html>
 <html lang="en">
   <body style="margin:0;padding:0;background-color:#f8f9fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f1523;">
@@ -79,7 +77,7 @@ async function freshSyncNovu() {
               <td style="padding:28px 24px 8px;">
                 <p style="margin:0 0 14px;font-size:16px;line-height:1.6;">Hi {{firstName}},</p>
                 <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5a6478;">
-                  ${formattedMessage}
+                  {{payload.message}}
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;">
                   <tr>
@@ -114,14 +112,14 @@ async function freshSyncNovu() {
                 {
                     template: {
                         type: 'in_app',
-                        content: formattedMessage,
+                        content: '{{payload.message}}',
                     },
                     active: true
                 },
                 {
                     template: {
                         type: 'email',
-                        subject: `TaskGid: ${data.title}`,
+                        subject: 'TaskGid: {{payload.message}}',
                         content: emailHtml,
                         contentType: 'customHtml'
                     },
