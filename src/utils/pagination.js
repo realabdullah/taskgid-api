@@ -7,14 +7,14 @@
  * @param {Object} query - Request query object
  * @param {Object} options - Options for pagination
  * @param {number} options.defaultPage - Default page number (default: 1)
- * @param {number} options.defaultLimit - Default items per page (default: 10)
+ * @param {number} options.defaultLimit - Default items per page (default: 50)
  * @param {number} options.maxLimit - Maximum items per page (default: 100)
  * @return {Object} Pagination parameters
  */
 export const getPaginationParams = (query, options = {}) => {
     const {
         defaultPage = 1,
-        defaultLimit = 10,
+        defaultLimit = 50,
         maxLimit = 100,
     } = options;
 
