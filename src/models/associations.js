@@ -15,6 +15,8 @@ import TaskAssignee from './TaskAssignee.js';
 import CommentLike from './CommentLike.js';
 import Tag from './Tag.js';
 import TaskTag from './TaskTag.js';
+import NotificationPreference from './NotificationPreference.js';
+import TaskRead from './TaskRead.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -93,6 +95,15 @@ Tag.belongsToMany(Task, {through: TaskTag, as: 'tasks', foreignKey: 'tagId'});
 // TaskTag associations
 TaskTag.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
 TaskTag.belongsTo(Tag, {foreignKey: 'tagId', as: 'tag'});
+
+// TaskRead associations
+TaskRead.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+TaskRead.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
+
+// NotificationPreference associations
+NotificationPreference.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+NotificationPreference.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+User.hasMany(NotificationPreference, {foreignKey: 'userId', as: 'notificationPreferences'});
 
 /**
  * Sets up all model associations

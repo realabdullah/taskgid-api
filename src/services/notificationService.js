@@ -5,6 +5,7 @@ import { NOTIFICATION_TYPES } from "../constants/notificationTypes.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
 import { validateNotificationData } from "../utils/notificationValidator.js";
+import { resolveDelivery } from "../utils/notificationPreferences.js";
 
 /**
  * Notification Service class to handle real-time notifications and Novu workflows
@@ -243,6 +244,13 @@ class NotificationService {
    */
   async sendNotification(userId, event, data, options = {}) {
     try {
+      // The user's own settings decide what actually goes out. Resolved before
+      // anything is dispatched so a muted event costs one query, not a send.
+      const delivery = await resolveDelivery(userId, event, {
+        workspaceId: data?.workspaceId ?? options.workspaceId ?? null,
+      });
+      if (!delivery.inApp && !delivery.email) return;
+
       const notification = await this.storeNotification(
         userId,
         event,
@@ -259,13 +267,16 @@ class NotificationService {
       };
 
       // 1. Pusher for real-time updates (e.g., live comments on the frontend)
-      if (this.pusher) {
+      if (this.pusher && delivery.inApp) {
         await this.sendPusherNotification(userId, event, finalData);
       }
 
       // 2. Novu for product notifications (Bell icon, emails)
-      if (this.novu) {
-        await this.sendNovuNotification(userId, event, finalData);
+      if (this.novu && (delivery.inApp || delivery.email)) {
+        await this.sendNovuNotification(userId, event, {
+          ...finalData,
+          emailEnabled: delivery.email,
+        });
       }
     } catch (error) {
       console.error("Notification sending failed:", error);
