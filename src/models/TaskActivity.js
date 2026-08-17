@@ -36,6 +36,8 @@ const TaskActivity = sequelize.define('TaskActivity', {
             'unassigned',
             'comment_added',
             'attachment_added',
+            'tags_added',
+            'tags_removed',
             'deleted',
         ),
         allowNull: false,
