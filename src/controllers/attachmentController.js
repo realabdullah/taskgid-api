@@ -7,6 +7,20 @@ import Comment from '../models/Comment.js';
 import {deleteFile} from '../utils/fileUpload.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {errorResponse} from '../utils/responseUtils.js';
+import {Workspace} from '../models/Workspace.js';
+
+/**
+ * Resolve a workspace slug to its id.
+ *
+ * These routes take a slug like every other workspace route; the handlers below
+ * still compare against ids, which is what the Task and Comment records store.
+ * @param {string} slug - Workspace slug from the path.
+ * @return {Promise<string|null>} The workspace id, or null when no such workspace.
+ */
+const getWorkspaceIdFromSlug = async (slug) => {
+    const workspace = await Workspace.findOne({where: {slug}, attributes: ['id']});
+    return workspace ? workspace.id : null;
+};
 
 /**
  * Handles file upload and attachment creation for a Task.
@@ -14,7 +28,7 @@ import {errorResponse} from '../utils/responseUtils.js';
  * @param {Object} res - Express response object.
  */
 export const uploadTaskAttachment = async (req, res) => {
-    const {id: workspaceId, taskId} = req.params;
+    const {workspaceSlug, taskId} = req.params;
     const userId = req.user.id;
 
     if (!req.uploadedFile) {
@@ -22,6 +36,11 @@ export const uploadTaskAttachment = async (req, res) => {
     }
 
     try {
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        if (!workspaceId) {
+            return errorResponse(res, 404, 'Workspace not found');
+        }
+
         // 1. Authorization: Check if user is member of the task's workspace
         const task = await Task.findByPk(taskId, {attributes: ['workspaceId']});
         if (!task) {
@@ -77,7 +96,7 @@ export const uploadTaskAttachment = async (req, res) => {
  * @param {Object} res - Express response object.
  */
 export const uploadCommentAttachment = async (req, res) => {
-    const {id: workspaceId, commentId} = req.params;
+    const {workspaceSlug, commentId} = req.params;
     const userId = req.user.id;
 
     if (!req.uploadedFile) {
@@ -85,6 +104,11 @@ export const uploadCommentAttachment = async (req, res) => {
     }
 
     try {
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        if (!workspaceId) {
+            return errorResponse(res, 404, 'Workspace not found');
+        }
+
         // 1. Authorization: Check if user is member of the comment's workspace
         const comment = await Comment.findByPk(commentId, {
             include: [{model: Task, as: 'task', attributes: ['workspaceId']}],
@@ -201,10 +225,15 @@ export const deleteAttachment = async (req, res) => {
  * @param {Object} res - Express response object.
  */
 export const getTaskAttachments = async (req, res) => {
-    const {id: workspaceId, taskId} = req.params;
+    const {workspaceSlug, taskId} = req.params;
     const userId = req.user.id;
 
     try {
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        if (!workspaceId) {
+            return errorResponse(res, 404, 'Workspace not found');
+        }
+
         // Authorization: Check if user is member of the task's workspace
         const task = await Task.findByPk(taskId, {attributes: ['workspaceId']});
         if (!task) {
@@ -241,10 +270,15 @@ export const getTaskAttachments = async (req, res) => {
  * @param {Object} res - Express response object.
  */
 export const getCommentAttachments = async (req, res) => {
-    const {id: workspaceId, commentId} = req.params;
+    const {workspaceSlug, commentId} = req.params;
     const userId = req.user.id;
 
     try {
+        const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
+        if (!workspaceId) {
+            return errorResponse(res, 404, 'Workspace not found');
+        }
+
         // Authorization: Check if user is member of the comment's workspace
         const comment = await Comment.findByPk(commentId, {
             include: [{model: Task, as: 'task', attributes: ['workspaceId']}],
