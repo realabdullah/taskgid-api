@@ -6,6 +6,7 @@ import {requestLoginWithAuthn, loginWithAuthn, authLimiter} from '../controllers
 import authMiddleware from '../middleware/authMiddleware.js';
 import {
     validateRegisterInput,
+    validateSignupAllowlist,
     validateLoginInput,
     validateRefreshInput,
 } from '../middleware/validationMiddleware.js';
@@ -17,7 +18,7 @@ const router = express.Router();
 router.use(authLimiter);
 
 // Authentication routes
-router.post('/register', validateRegisterInput, register);
+router.post('/register', validateRegisterInput, validateSignupAllowlist, register);
 router.post('/login', validateLoginInput, login);
 router.post('/logout', authMiddleware, logout);
 router.post('/refresh', validateRefreshInput, refresh);

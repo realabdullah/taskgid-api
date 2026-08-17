@@ -1,4 +1,5 @@
 import {body, validationResult} from 'express-validator';
+import {isSignupAllowed} from '../utils/signupAllowlist.js';
 
 /**
  * Middleware to validate workspace input
@@ -401,3 +402,20 @@ export const validateBatchAssignInput = [
         next();
     },
 ];
+
+/**
+ * Middleware restricting registration to allowlisted email addresses.
+ * No-op when ALLOWED_SIGNUP_EMAILS is unset, so signup stays open by default.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next function
+ * @return {void}
+ */
+export const validateSignupAllowlist = (req, res, next) => {
+    if (isSignupAllowed(req.body?.email)) return next();
+    return res.status(403).json({
+        success: false,
+        error: 'This email address is not approved for signup. ' +
+            'Contact an administrator to request access.',
+    });
+};
