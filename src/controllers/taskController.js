@@ -837,7 +837,13 @@ export const fetchWorkspaceTasks = async (req, res) => {
           assigneesInclude.where = { id: currentUserId };
           assigneesInclude.required = true;
         } else if (assignee === "unassigned") {
-          whereConditions["$assignees.id$"] = { [Op.is]: null };
+          // Expressed against the parent table rather than the joined column so
+          // it survives the pagination subquery.
+          whereConditions.id = {
+            [Op.notIn]: sequelize.literal(
+              "(SELECT task_id FROM task_assignees)",
+            ),
+          };
           assigneesInclude.required = false;
         }
       }
@@ -850,7 +856,6 @@ export const fetchWorkspaceTasks = async (req, res) => {
       offset,
       order: [["createdAt", "DESC"]],
       distinct: true,
-      subQuery: false,
       attributes: {
         include: [
           [
@@ -1222,7 +1227,13 @@ export const advancedSearchTasks = async (req, res) => {
           assigneesInclude.where = { id: currentUserId };
           assigneesInclude.required = true;
         } else if (assignee === "unassigned") {
-          whereConditions["$assignees.id$"] = { [Op.is]: null };
+          // Expressed against the parent table rather than the joined column so
+          // it survives the pagination subquery.
+          whereConditions.id = {
+            [Op.notIn]: sequelize.literal(
+              "(SELECT task_id FROM task_assignees)",
+            ),
+          };
           assigneesInclude.required = false;
         } else {
           const assigneeUser = await User.findOne({
@@ -1273,7 +1284,6 @@ export const advancedSearchTasks = async (req, res) => {
       offset,
       order: [[sortField, order]],
       distinct: true,
-      subQuery: false,
       attributes: {
         include: [
           [

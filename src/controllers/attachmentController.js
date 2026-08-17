@@ -4,6 +4,7 @@
 import Attachment from '../models/Attachment.js';
 import Task from '../models/Task.js';
 import Comment from '../models/Comment.js';
+import User from '../models/User.js';
 import {deleteFile} from '../utils/fileUpload.js';
 import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {errorResponse} from '../utils/responseUtils.js';
