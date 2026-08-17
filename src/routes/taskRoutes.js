@@ -13,6 +13,7 @@ import {
 } from '../controllers/taskController.js';
 import {
     getTaskComments,
+    markTaskRead,
     addTaskComment,
     getCommentReplies,
     updateComment,
@@ -49,6 +50,7 @@ router.delete('/:id', checkMemberMiddleware, deleteTask);
 
 // Comment routes
 router.get('/:id/comments', checkMemberMiddleware, getTaskComments);
+router.post('/:id/read', checkMemberMiddleware, markTaskRead);
 router.post(
     '/:id/comments',
     checkMemberMiddleware,

@@ -16,6 +16,10 @@ import {
   logWorkspaceActivity,
 } from "../utils/activityLogger.js";
 import {
+  emitWorkspaceEvent,
+  WORKSPACE_EVENTS,
+} from "../services/workspaceEvents.js";
+import {
   createPaginatedResponse,
   getPaginationParams,
 } from "../utils/pagination.js";
@@ -76,6 +80,27 @@ const getWorkspaceIdFromSlug = async (slug) => {
  * @param {string|Array<string>} queryParam - Query parameter to parse
  * @return {Array<string>|undefined} - Parsed array or undefined if empty
  */
+/**
+ * SQL for the number of unread comments on a task for one user.
+ * @param {string} [userId] - The reader. Without one, nothing is unread.
+ * @return {string} A SQL scalar subquery.
+ */
+const unreadCommentCountSql = (userId) => {
+  if (!userId) return "0";
+  const reader = sequelize.escape(userId);
+  return `(
+    SELECT COUNT(*)::int FROM comments
+    WHERE comments.task_id = "Task".id
+      AND comments.user_id <> ${reader}::uuid
+      AND comments.created_at > COALESCE(
+        (SELECT task_reads.last_read_at FROM task_reads
+          WHERE task_reads.task_id = "Task".id
+            AND task_reads.user_id = ${reader}::uuid),
+        '-infinity'::timestamptz
+      )
+  )`;
+};
+
 const parseQueryArray = (queryParam) => {
   if (!queryParam) return undefined;
   if (Array.isArray(queryParam))
@@ -225,7 +250,7 @@ export const addTask = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
           ],
@@ -233,6 +258,12 @@ export const addTask = async (req, res) => {
       },
     });
 
+    emitWorkspaceEvent({
+      workspaceId: populatedTask.workspaceId,
+      type: WORKSPACE_EVENTS.TASK_CREATED,
+      actorId: req.user?.id,
+      payload: { taskId: populatedTask.id },
+    });
     return successResponse(res, { data: populatedTask.toJSON() }, 201);
   } catch (error) {
     console.error("Add Task Error:", error);
@@ -572,7 +603,7 @@ export const updateTask = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
           ],
@@ -580,6 +611,12 @@ export const updateTask = async (req, res) => {
       },
     });
 
+    emitWorkspaceEvent({
+      workspaceId: updatedTask.workspaceId,
+      type: WORKSPACE_EVENTS.TASK_UPDATED,
+      actorId: req.user?.id,
+      payload: { taskId: updatedTask.id, status: updatedTask.status },
+    });
     return successResponse(res, { data: updatedTask.toJSON() });
   } catch (error) {
     console.error("Update Task Error:", error);
@@ -646,7 +683,7 @@ export const fetchWorkspaceTask = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
           ],
@@ -710,6 +747,12 @@ export const deleteTask = async (req, res) => {
 
     await logWorkspaceActivity(workspaceId, req.user.id, "task_deleted", meta);
 
+    emitWorkspaceEvent({
+      workspaceId,
+      type: WORKSPACE_EVENTS.TASK_DELETED,
+      actorId: req.user?.id,
+      payload: { taskId: meta.taskId },
+    });
     return successResponse(res, { message: "Task deleted successfully" });
   } catch (error) {
     console.error("Delete Task Error:", error);
@@ -860,9 +903,15 @@ export const fetchWorkspaceTasks = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
+          ],
+          // Comments from other people that arrived after this user last read
+          // the task. A task never opened counts all of them as unread.
+          [
+            sequelize.literal(unreadCommentCountSql(currentUserId)),
+            "unreadCommentCount",
           ],
         ],
       },
@@ -1288,9 +1337,15 @@ export const advancedSearchTasks = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
+          ],
+          // Comments from other people that arrived after this user last read
+          // the task. A task never opened counts all of them as unread.
+          [
+            sequelize.literal(unreadCommentCountSql(currentUserId)),
+            "unreadCommentCount",
           ],
         ],
       },
@@ -1481,7 +1536,7 @@ export const exportTasksCSV = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
           ],
@@ -1695,7 +1750,7 @@ export const exportTasksPDF = async (req, res) => {
         include: [
           [
             sequelize.literal(
-              '(SELECT COUNT(*) FROM comments WHERE comments.task_id = "Task".id)',
+              '(SELECT COUNT(*)::int FROM comments WHERE comments.task_id = "Task".id)',
             ),
             "commentCount",
           ],
