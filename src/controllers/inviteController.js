@@ -382,7 +382,7 @@ const acceptInvite = async (req, res) => {
 };
 
 const getPendingInvitations = async (req, res) => {
-  const { page, limit, offset } = getPaginationParams(req);
+  const { page, limit, offset } = getPaginationParams(req.query);
   const userEmail = req.user.email;
 
   if (!userEmail) {
