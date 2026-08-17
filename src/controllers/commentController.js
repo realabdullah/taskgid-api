@@ -15,6 +15,28 @@ import {
 } from "../utils/pagination.js";
 import { sanitizeRichText } from "../utils/sanitizer.js";
 
+/**
+ * Marks which of the given comments the requesting user has already liked, so a
+ * client can render the toggle in the right state without a request per comment.
+ * @param {Array<Object>} comments - Comment instances from a findAll/findAndCountAll.
+ * @param {string} userId - The requesting user's id.
+ * @return {Promise<Array<Object>>} Plain comment objects with `likedByMe` set.
+ */
+const withLikedByMe = async (comments, userId) => {
+  const plain = comments.map((comment) => comment.toJSON());
+  if (!userId || plain.length === 0) {
+    return plain.map((comment) => ({ ...comment, likedByMe: false }));
+  }
+
+  const likes = await CommentLike.findAll({
+    where: { userId, commentId: { [Op.in]: plain.map((c) => c.id) } },
+    attributes: ["commentId"],
+  });
+  const liked = new Set(likes.map((like) => like.commentId));
+
+  return plain.map((comment) => ({ ...comment, likedByMe: liked.has(comment.id) }));
+};
+
 const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
   if (!usernames || usernames.length === 0) {
     return [];
@@ -129,7 +151,12 @@ export const getTaskComments = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    const response = createPaginatedResponse(comments, count, page, limit);
+    const response = createPaginatedResponse(
+      await withLikedByMe(comments, req.user?.id),
+      count,
+      page,
+      limit,
+    );
     res.json(response);
   } catch (error) {
     console.error("Error fetching task comments:", error);
@@ -178,7 +205,12 @@ export const getCommentReplies = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    const response = createPaginatedResponse(replies, count, page, limit);
+    const response = createPaginatedResponse(
+      await withLikedByMe(replies, req.user?.id),
+      count,
+      page,
+      limit,
+    );
     res.json(response);
   } catch (error) {
     console.error("Error fetching comment replies:", error);
