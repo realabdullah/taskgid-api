@@ -84,6 +84,23 @@ Task.init(
             allowNull: false,
             defaultValue: [],
         },
+        recurrenceId: {
+            // The schedule that produced this task, if any. Nulled rather than
+            // cascaded when a rule is deleted: ending a schedule does not
+            // retract the work already done under it.
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'task_recurrences',
+                key: 'id',
+            },
+        },
+        occurrenceDate: {
+            // Which occurrence of that schedule this task is, so a completed
+            // instance stays attributable to its period.
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
         parentId: {
             /*
              * The task this one is a subtask of; NULL means top-level. A
