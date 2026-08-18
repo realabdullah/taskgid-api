@@ -84,6 +84,21 @@ Task.init(
             allowNull: false,
             defaultValue: [],
         },
+        parentId: {
+            /*
+             * The task this one is a subtask of; NULL means top-level. A
+             * subtask has its own assignee, due date and tags — that is what
+             * separates it from a checklist item. Completion does not cascade
+             * in either direction: a parent reports its children's progress
+             * rather than enforcing it.
+             */
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'tasks',
+                key: 'id',
+            },
+        },
         workspaceId: {
             type: DataTypes.UUID,
             allowNull: false,

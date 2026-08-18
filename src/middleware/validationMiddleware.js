@@ -89,6 +89,10 @@ export const validateTaskInput = [
         .optional({nullable: true})
         .isArray({max: 100})
         .withMessage('Checklist must be an array of at most 100 items'),
+    body('parentId')
+        .optional({nullable: true})
+        .isUUID()
+        .withMessage('Parent task must be a valid task ID'),
     body('assignees')
         .optional()
         .isArray()
@@ -367,6 +371,10 @@ export const validateTaskUpdateInput = [
         .optional({nullable: true})
         .isArray({max: 100})
         .withMessage('Checklist must be an array of at most 100 items'),
+    body('parentId')
+        .optional({nullable: true})
+        .isUUID()
+        .withMessage('Parent task must be a valid task ID'),
     body('assignees')
         .optional()
         .isArray()

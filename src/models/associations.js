@@ -50,6 +50,8 @@ Task.hasMany(Comment, {foreignKey: 'taskId', as: 'comments'});
 Task.hasMany(Attachment, {foreignKey: 'taskId', as: 'attachments'});
 Task.hasMany(TaskActivity, {foreignKey: 'taskId', as: 'activities'});
 Task.belongsToMany(Tag, {through: TaskTag, as: 'tags', foreignKey: 'taskId'});
+Task.belongsTo(Task, {foreignKey: 'parentId', as: 'parent'});
+Task.hasMany(Task, {foreignKey: 'parentId', as: 'subtasks'});
 
 // Comment associations
 Comment.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
