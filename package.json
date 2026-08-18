@@ -13,6 +13,7 @@
     "db:sync:force": "node scripts/sync-db.js --force",
     "db:migrate": "node scripts/run-migrations.js",
     "digests:send": "node scripts/send-digests.js",
+    "recurrences:spawn": "node scripts/spawn-recurrences.js",
     "db:migrate:down": "node scripts/run-migrations.js --down",
     "docs:generate": "node scripts/swagger.js"
   },
@@ -46,6 +47,7 @@
     "pusher": "^5.2.0",
     "qrcode": "^1.5.4",
     "resend": "^6.12.2",
+    "rrule": "^2.8.1",
     "sanitize-html": "^2.17.3",
     "sequelize": "^6.31.0",
     "sequelize-cli": "^6.6.2",
