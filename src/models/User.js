@@ -167,6 +167,13 @@ User.init(
             type: DataTypes.STRING,
             allowNull: true,
         },
+        timezone: {
+            // IANA name, e.g. 'Africa/Lagos'. Overdue, "today" and digest send
+            // times are all computed against this rather than the server's clock.
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: 'UTC',
+        },
     },
     {
         sequelize,

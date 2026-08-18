@@ -126,7 +126,7 @@ export const getWorkspaceTags = async (req, res) => {
             attributes: {
                 include: [
                     [
-                        sequelize.literal('(SELECT COUNT(*) FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
+                        sequelize.literal('(SELECT COUNT(*)::int FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
                         'taskCount',
                     ],
                 ],
@@ -174,7 +174,7 @@ export const getTag = async (req, res) => {
             attributes: {
                 include: [
                     [
-                        sequelize.literal('(SELECT COUNT(*) FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
+                        sequelize.literal('(SELECT COUNT(*)::int FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
                         'taskCount',
                     ],
                 ],
@@ -272,7 +272,7 @@ export const updateTag = async (req, res) => {
             attributes: {
                 include: [
                     [
-                        sequelize.literal('(SELECT COUNT(*) FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
+                        sequelize.literal('(SELECT COUNT(*)::int FROM task_tags WHERE task_tags.tag_id = "Tag".id)'),
                         'taskCount',
                     ],
                 ],

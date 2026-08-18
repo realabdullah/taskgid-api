@@ -28,6 +28,7 @@ import {
     checkSuperAdminMiddleware,
 } from '../middleware/workspaceMiddleware.js';
 import tagRoutes from './tagRoutes.js';
+import {streamWorkspaceEvents} from '../controllers/eventController.js';
 
 const router = new express.Router();
 
@@ -43,6 +44,11 @@ router.put('/:slug', checkSuperAdminMiddleware, validateWorkspaceInput, updateWo
 router.delete('/:slug', checkSuperAdminMiddleware, deleteWorkspace);
 router.get('/:slug/activities', checkMemberMiddleware, getWorkspaceActivities);
 router.get('/:slug/export/csv', checkAdminMiddleware, exportWorkspaceDataCSV);
+
+// --- Realtime (by Workspace Slug) ---
+// checkMemberMiddleware is the security boundary here: a member of workspace A
+// must never be able to open workspace B's stream.
+router.get('/:slug/events', checkMemberMiddleware, streamWorkspaceEvents);
 
 // --- Tag Management (by Workspace Slug) ---
 router.use('/:workspaceSlug/tags', checkMemberMiddleware, tagRoutes);

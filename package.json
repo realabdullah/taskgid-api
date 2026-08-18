@@ -12,6 +12,7 @@
     "db:sync": "node scripts/sync-db.js",
     "db:sync:force": "node scripts/sync-db.js --force",
     "db:migrate": "node scripts/run-migrations.js",
+    "digests:send": "node scripts/send-digests.js",
     "db:migrate:down": "node scripts/run-migrations.js --down",
     "docs:generate": "node scripts/swagger.js"
   },

@@ -5,6 +5,7 @@ import sequelize from "../config/database.js";
 import { NOTIFICATION_TYPES } from "../constants/notificationTypes.js";
 import Comment from "../models/Comment.js";
 import CommentLike from "../models/CommentLike.js";
+import TaskRead from "../models/TaskRead.js";
 import Task from "../models/Task.js";
 import User from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
@@ -14,6 +15,32 @@ import {
   getPaginationParams,
 } from "../utils/pagination.js";
 import { sanitizeRichText } from "../utils/sanitizer.js";
+import {
+  emitWorkspaceEvent,
+  WORKSPACE_EVENTS,
+} from "../services/workspaceEvents.js";
+
+/**
+ * Marks which of the given comments the requesting user has already liked, so a
+ * client can render the toggle in the right state without a request per comment.
+ * @param {Array<Object>} comments - Comment instances from a findAll/findAndCountAll.
+ * @param {string} userId - The requesting user's id.
+ * @return {Promise<Array<Object>>} Plain comment objects with `likedByMe` set.
+ */
+const withLikedByMe = async (comments, userId) => {
+  const plain = comments.map((comment) => comment.toJSON());
+  if (!userId || plain.length === 0) {
+    return plain.map((comment) => ({ ...comment, likedByMe: false }));
+  }
+
+  const likes = await CommentLike.findAll({
+    where: { userId, commentId: { [Op.in]: plain.map((c) => c.id) } },
+    attributes: ["commentId"],
+  });
+  const liked = new Set(likes.map((like) => like.commentId));
+
+  return plain.map((comment) => ({ ...comment, likedByMe: liked.has(comment.id) }));
+};
 
 const findMentionedUsersInWorkspace = async (usernames, workspaceId) => {
   if (!usernames || usernames.length === 0) {
@@ -129,7 +156,12 @@ export const getTaskComments = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    const response = createPaginatedResponse(comments, count, page, limit);
+    const response = createPaginatedResponse(
+      await withLikedByMe(comments, req.user?.id),
+      count,
+      page,
+      limit,
+    );
     res.json(response);
   } catch (error) {
     console.error("Error fetching task comments:", error);
@@ -178,7 +210,12 @@ export const getCommentReplies = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    const response = createPaginatedResponse(replies, count, page, limit);
+    const response = createPaginatedResponse(
+      await withLikedByMe(replies, req.user?.id),
+      count,
+      page,
+      limit,
+    );
     res.json(response);
   } catch (error) {
     console.error("Error fetching comment replies:", error);
@@ -295,6 +332,12 @@ export const addTaskComment = async (req, res) => {
     }
 
     await t.commit();
+    emitWorkspaceEvent({
+      workspaceId: task.workspaceId,
+      type: WORKSPACE_EVENTS.COMMENT_CREATED,
+      actorId: userId,
+      payload: { taskId: task.id, commentId: populatedComment.id },
+    });
     return res.status(201).json({
       success: true,
       data: populatedComment.toJSON(),
@@ -562,5 +605,35 @@ export const unlikeComment = async (req, res) => {
     await t.rollback();
     console.error("Error unliking comment:", error);
     res.status(500).json({ success: false, error: "Failed to unlike comment" });
+  }
+};
+
+/**
+ * Marks a task's discussion as read up to now for the requesting user.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @return {Object} JSON response with the recorded timestamp.
+ */
+export const markTaskRead = async (req, res) => {
+  try {
+    const { id: taskId } = req.params;
+    const task = await Task.findByPk(taskId, { attributes: ["id"] });
+    if (!task) {
+      return res.status(404).json({ success: false, error: "Task not found" });
+    }
+
+    const lastReadAt = new Date();
+    const [row] = await TaskRead.findOrCreate({
+      where: { userId: req.user.id, taskId },
+      defaults: { userId: req.user.id, taskId, lastReadAt },
+    });
+    await row.update({ lastReadAt });
+
+    return res.json({ success: true, data: { taskId, lastReadAt } });
+  } catch (error) {
+    console.error("Mark Task Read Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to mark the task as read" });
   }
 };

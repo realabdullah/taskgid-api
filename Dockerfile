@@ -13,5 +13,8 @@ RUN npm install
 # Copy the rest of the application code to the working directory
 COPY . .
 
-# Start the application
-CMD ["npm", "start"]
+# Not the production deploy path — the API runs on Vercel. Kept for container
+# runs, where the ordering still matters: sequelize.sync() creates missing
+# tables but never missing columns, so booting first leaves the schema
+# half-applied and fails on the first query for the new column.
+CMD ["sh", "-c", "npm run db:migrate && npm start"]
