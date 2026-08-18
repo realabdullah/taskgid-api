@@ -26,6 +26,7 @@ import {
 } from "../utils/pagination.js";
 import { errorResponse, successResponse } from "../utils/responseUtils.js";
 import { sanitizePlainText, sanitizeRichText } from "../utils/sanitizer.js";
+import { TOP_LEVEL_ONLY, shouldIncludeSubtasks } from "../utils/taskScope.js";
 
 /**
  * Get user ID by assignee username
@@ -102,6 +103,66 @@ const unreadCommentCountSql = (userId) => {
   )`;
 };
 
+/*
+ * A parent's subtask progress, as two scalar subqueries.
+ *
+ * Completion does not cascade: a parent is done when someone marks it done,
+ * not when its children are. These figures let a parent *report* "3 of 5 done"
+ * without that reporting turning into enforcement.
+ */
+const SUBTASK_PROGRESS_ATTRIBUTES = [
+  [
+    sequelize.literal(
+      '(SELECT COUNT(*)::int FROM tasks AS sub WHERE sub.parent_id = "Task".id)',
+    ),
+    "subtaskCount",
+  ],
+  [
+    sequelize.literal(
+      `(SELECT COUNT(*)::int FROM tasks AS sub
+         WHERE sub.parent_id = "Task".id AND sub.status = 'done')`,
+    ),
+    "subtaskDoneCount",
+  ],
+];
+
+/**
+ * Check that a task may be nested under a proposed parent.
+ *
+ * The hierarchy is deliberately one level deep: a subtask cannot itself have
+ * subtasks. Deeper trees buy little for a task list and cost a recursive query
+ * on every count, every filter and every progress figure.
+ * @param {string|null} parentId - Proposed parent, or null to detach.
+ * @param {string} workspaceId - Workspace the child belongs to.
+ * @param {string} [childId] - The task being nested, when it already exists.
+ * @return {Promise<string|null>} An error message, or null when the move is allowed.
+ */
+const validateParent = async (parentId, workspaceId, childId) => {
+  if (!parentId) return null;
+  if (childId && parentId === childId) {
+    return "A task cannot be its own parent";
+  }
+
+  const parent = await Task.findOne({
+    where: { id: parentId, workspaceId },
+    attributes: ["id", "parentId"],
+  });
+
+  if (!parent) return "Parent task not found in this workspace";
+  if (parent.parentId) return "Subtasks cannot have subtasks of their own";
+
+  if (childId) {
+    const childHasChildren = await Task.count({
+      where: { parentId: childId },
+    });
+    if (childHasChildren > 0) {
+      return "A task with subtasks cannot become a subtask itself";
+    }
+  }
+
+  return null;
+};
+
 const parseQueryArray = (queryParam) => {
   if (!queryParam) return undefined;
   if (Array.isArray(queryParam))
@@ -154,7 +215,7 @@ export const addTask = async (req, res) => {
     const { workspaceSlug } = req.params;
     const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-    const { status, priority, dueDate, startDate, estimateMinutes, assignees, tags } =
+    const { status, priority, dueDate, startDate, estimateMinutes, assignees, tags, parentId } =
       req.body;
     const title = sanitizePlainText(req.body.title);
     const description = sanitizeRichText(req.body.description);
@@ -163,6 +224,9 @@ export const addTask = async (req, res) => {
       req.body.checklist,
     );
     if (checklistError) return errorResponse(res, 400, checklistError);
+
+    const parentError = await validateParent(parentId, workspaceId);
+    if (parentError) return errorResponse(res, 400, parentError);
 
     const assigneeIds = await getAssignees(assignees);
     const tagIds = await getTagIds(tags, workspaceId);
@@ -176,6 +240,7 @@ export const addTask = async (req, res) => {
       startDate,
       estimateMinutes,
       checklist,
+      parentId: parentId || null,
       workspaceId,
       createdById: req.user.id,
     });
@@ -264,6 +329,7 @@ export const addTask = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
         ],
       },
     });
@@ -370,6 +436,18 @@ export const updateTask = async (req, res) => {
       "estimateMinutes",
     ];
     const updatePayload = {};
+
+    // Re-parenting is explicit: `parentId: null` promotes a subtask back to the
+    // top level, which is how a subtask is detached rather than deleted.
+    if (updateData.parentId !== undefined) {
+      const error = await validateParent(
+        updateData.parentId,
+        workspaceId,
+        taskId,
+      );
+      if (error) return errorResponse(res, 400, error);
+      updatePayload.parentId = updateData.parentId || null;
+    }
 
     // The checklist is replaced wholesale rather than patched item by item, so
     // reordering, editing and completing are all the same request.
@@ -627,6 +705,7 @@ export const updateTask = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
         ],
       },
     });
@@ -707,6 +786,7 @@ export const fetchWorkspaceTask = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
         ],
       },
     });
@@ -796,6 +876,8 @@ export const deleteTask = async (req, res) => {
  * @param {string|Array<string>} [req.query.status] - Filter by status
  * @param {string|Array<string>} [req.query.priority] - Filter by priority
  * @param {string|Array<string>} [req.query.tags] - Filter by tag names
+ * @param {string} [req.query.parentId] - List one task's subtasks instead of the top level
+ * @param {string} [req.query.includeSubtasks] - Force subtasks in ('true') or out ('false')
  * @param {number} [req.query.page] - Page number for pagination
  * @param {number} [req.query.limit] - Number of items per page
  * @param {Object} req.user - Authenticated user
@@ -807,7 +889,7 @@ export const fetchWorkspaceTasks = async (req, res) => {
     const { workspaceSlug } = req.params;
     const { page, limit, offset } = getPaginationParams(req.query);
 
-    const { search, assignee } = req.query;
+    const { search, assignee, parentId } = req.query;
     const statusFilter = parseQueryArray(req.query.status);
     const priorityFilter = parseQueryArray(req.query.priority);
     const tagsFilter = parseQueryArray(req.query.tags);
@@ -912,6 +994,23 @@ export const fetchWorkspaceTasks = async (req, res) => {
       }
     }
 
+    if (parentId) {
+      // Asking for one task's children is the explicit way to see a level of
+      // the hierarchy below the top.
+      whereConditions.parentId = parentId;
+    } else {
+      // A search term, an assignee or a tag is a deliberate request that cuts
+      // across the hierarchy, so a subtask that matches still surfaces.
+      // Without one, the list is the top level only, and a subtask is reached
+      // through its parent.
+      const hasExplicitFilter = Boolean(
+        search || assignee || (tagsFilter && tagsFilter.length > 0),
+      );
+      if (!shouldIncludeSubtasks(req.query, hasExplicitFilter)) {
+        Object.assign(whereConditions, TOP_LEVEL_ONLY);
+      }
+    }
+
     const { count, rows: tasks } = await Task.findAndCountAll({
       where: whereConditions,
       include: includeConditions,
@@ -927,6 +1026,7 @@ export const fetchWorkspaceTasks = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
           // Comments from other people that arrived after this user last read
           // the task. A task never opened counts all of them as unread.
           [
@@ -1146,6 +1246,8 @@ export const batchAssignTasks = async (req, res) => {
  * @param {string} [req.query.sortBy] - Sort by field (title, dueDate, priority, createdAt, updatedAt)
  * @param {string} [req.query.sortOrder] - Sort order (ASC or DESC)
  * @param {boolean} [req.query.includeComments] - Include comment content in search
+ * @param {string} [req.query.parentId] - List one task's subtasks instead of the top level
+ * @param {string} [req.query.includeSubtasks] - Force subtasks in ('true') or out ('false')
  * @param {number} [req.query.page] - Page number for pagination
  * @param {number} [req.query.limit] - Number of items per page
  * @param {Object} req.user - Authenticated user
@@ -1346,6 +1448,34 @@ export const advancedSearchTasks = async (req, res) => {
     const sortField = validSortFields.includes(sortBy) ? sortBy : "createdAt";
     const order = sortOrder.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
+    if (req.query.parentId) {
+      whereConditions.parentId = req.query.parentId;
+    } else {
+      /*
+       * This endpoint backs the plain workbench list as well as an actual
+       * search, so the scope depends on the request rather than the route: a
+       * search term, an assignee, a creator, a tag or a date range is a
+       * deliberate request that cuts across the hierarchy and pulls matching
+       * subtasks in. Status and priority do not — they narrow the list a
+       * person is already looking at, and the board filters by status per
+       * column, so treating them as cross-cutting would scatter subtasks
+       * through every column.
+       */
+      const hasExplicitFilter = Boolean(
+        search ||
+          assignee ||
+          creator ||
+          (tagsFilter && tagsFilter.length > 0) ||
+          dueDateFrom ||
+          dueDateTo ||
+          createdFrom ||
+          createdTo,
+      );
+      if (!shouldIncludeSubtasks(req.query, hasExplicitFilter)) {
+        Object.assign(whereConditions, TOP_LEVEL_ONLY);
+      }
+    }
+
     const { count, rows: tasks } = await Task.findAndCountAll({
       where: whereConditions,
       include: includeConditions,
@@ -1361,6 +1491,7 @@ export const advancedSearchTasks = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
           // Comments from other people that arrived after this user last read
           // the task. A task never opened counts all of them as unread.
           [
@@ -1560,13 +1691,16 @@ export const exportTasksCSV = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
         ],
       },
     });
 
     // Convert tasks to CSV format
+    // An export is a record, not a headline figure: it carries subtasks too,
+    // with the parent named so the hierarchy survives the round trip.
     const csvHeader =
-      "ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Tags,Comment Count,Created At,Updated At\n";
+      "ID,Parent Task ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Tags,Comment Count,Created At,Updated At\n";
     const csvRows = tasks
       .map((task) => {
         const assignees = task.assignees
@@ -1577,6 +1711,7 @@ export const exportTasksCSV = async (req, res) => {
 
         return [
           task.id,
+          task.parentId || "",
           `"${task.title.replace(/"/g, '""')}"`,
           `"${(task.description || "").replace(/"/g, '""')}"`,
           task.status,
@@ -1774,6 +1909,7 @@ export const exportTasksPDF = async (req, res) => {
             ),
             "commentCount",
           ],
+          ...SUBTASK_PROGRESS_ATTRIBUTES,
         ],
       },
     });

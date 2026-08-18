@@ -351,6 +351,8 @@ export const getTagTasks = async (req, res) => {
             return errorResponse(res, 404, 'Tag not found in this workspace');
         }
 
+        // Filtering by tag is an explicit request that cuts across the
+        // hierarchy: a subtask carrying the tag belongs in the result.
         const {count, rows: tasks} = await Task.findAndCountAll({
             where: {workspaceId},
             include: [
