@@ -1,18 +1,29 @@
 'use strict';
 
+const {
+    addColumnIfMissing,
+    addIndexIfMissing,
+    createTableIfMissing,
+    removeColumnIfPresent,
+} = require('../scripts/migration-helpers.cjs');
+
 /**
- * Phase 3: per-user notification preferences and a timezone on the user, so
- * "overdue", "today" and digest send times mean the same thing everywhere.
+ * Phase 3: per-user notification preferences, a timezone on the user, and the
+ * read markers behind unread comment counts.
+ *
+ * `users.timezone` is the critical one: the User model declares it, so every
+ * query that touches a user selects it. Without this migration the column is
+ * missing on any database built by sync(), and login fails outright.
  */
 module.exports = {
     async up(queryInterface, Sequelize) {
-        await queryInterface.addColumn('users', 'timezone', {
+        await addColumnIfMissing(queryInterface, 'users', 'timezone', {
             type: Sequelize.STRING,
             allowNull: true,
             defaultValue: 'UTC',
         });
 
-        await queryInterface.createTable('notification_preferences', {
+        await createTableIfMissing(queryInterface, 'notification_preferences', {
             id: {
                 type: Sequelize.UUID,
                 defaultValue: Sequelize.literal('gen_random_uuid()'),
@@ -48,14 +59,43 @@ module.exports = {
             updated_at: {type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW')},
         });
 
-        await queryInterface.addIndex('notification_preferences', ['user_id', 'workspace_id'], {
+        await addIndexIfMissing(queryInterface, 'notification_preferences', ['user_id', 'workspace_id'], {
             unique: true,
             name: 'notification_preferences_user_workspace_unique',
+        });
+
+        await createTableIfMissing(queryInterface, 'task_reads', {
+            id: {
+                type: Sequelize.UUID,
+                defaultValue: Sequelize.literal('gen_random_uuid()'),
+                primaryKey: true,
+            },
+            user_id: {
+                type: Sequelize.UUID,
+                allowNull: false,
+                references: {model: 'users', key: 'id'},
+                onDelete: 'CASCADE',
+            },
+            task_id: {
+                type: Sequelize.UUID,
+                allowNull: false,
+                references: {model: 'tasks', key: 'id'},
+                onDelete: 'CASCADE',
+            },
+            last_read_at: {type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW')},
+            created_at: {type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW')},
+            updated_at: {type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW')},
+        });
+
+        await addIndexIfMissing(queryInterface, 'task_reads', ['user_id', 'task_id'], {
+            unique: true,
+            name: 'task_reads_user_task_unique',
         });
     },
 
     async down(queryInterface) {
+        await queryInterface.dropTable('task_reads');
         await queryInterface.dropTable('notification_preferences');
-        await queryInterface.removeColumn('users', 'timezone');
+        await removeColumnIfPresent(queryInterface, 'users', 'timezone');
     },
 };
