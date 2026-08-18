@@ -258,7 +258,7 @@ export const addTask = async (req, res) => {
       },
     });
 
-    emitWorkspaceEvent({
+    await emitWorkspaceEvent({
       workspaceId: populatedTask.workspaceId,
       type: WORKSPACE_EVENTS.TASK_CREATED,
       actorId: req.user?.id,
@@ -611,7 +611,7 @@ export const updateTask = async (req, res) => {
       },
     });
 
-    emitWorkspaceEvent({
+    await emitWorkspaceEvent({
       workspaceId: updatedTask.workspaceId,
       type: WORKSPACE_EVENTS.TASK_UPDATED,
       actorId: req.user?.id,
@@ -747,7 +747,7 @@ export const deleteTask = async (req, res) => {
 
     await logWorkspaceActivity(workspaceId, req.user.id, "task_deleted", meta);
 
-    emitWorkspaceEvent({
+    await emitWorkspaceEvent({
       workspaceId,
       type: WORKSPACE_EVENTS.TASK_DELETED,
       actorId: req.user?.id,

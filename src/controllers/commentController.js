@@ -332,7 +332,7 @@ export const addTaskComment = async (req, res) => {
     }
 
     await t.commit();
-    emitWorkspaceEvent({
+    await emitWorkspaceEvent({
       workspaceId: task.workspaceId,
       type: WORKSPACE_EVENTS.COMMENT_CREATED,
       actorId: userId,
