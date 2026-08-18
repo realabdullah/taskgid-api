@@ -60,6 +60,30 @@ Task.init(
             type: DataTypes.DATE,
             allowNull: true,
         },
+        startDate: {
+            // When work is meant to begin. Paired with dueDate it gives a task a
+            // span rather than a single deadline, which any timeline view needs.
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        estimateMinutes: {
+            // Stored in minutes so the API never has to guess what "2" means.
+            type: DataTypes.INTEGER,
+            allowNull: true,
+        },
+        checklist: {
+            /*
+             * An ordered list of {id, text, done} items, held on the task rather
+             * than in their own table. Checklist items are never queried,
+             * filtered or reported on independently — they are read and written
+             * with their task — so a column avoids a join and a migration per
+             * change of shape. Subtasks, which do need identity of their own,
+             * are a separate concern.
+             */
+            type: DataTypes.JSONB,
+            allowNull: false,
+            defaultValue: [],
+        },
         workspaceId: {
             type: DataTypes.UUID,
             allowNull: false,

@@ -77,6 +77,18 @@ export const validateTaskInput = [
         .optional()
         .isIn(['todo', 'in_progress', 'done'])
         .withMessage('Status must be todo, in_progress, or done'),
+    body('startDate')
+        .optional({nullable: true})
+        .isISO8601()
+        .withMessage('Start date must be a valid ISO 8601 date'),
+    body('estimateMinutes')
+        .optional({nullable: true})
+        .isInt({min: 0, max: 60 * 24 * 365})
+        .withMessage('Estimate must be a whole number of minutes'),
+    body('checklist')
+        .optional({nullable: true})
+        .isArray({max: 100})
+        .withMessage('Checklist must be an array of at most 100 items'),
     body('assignees')
         .optional()
         .isArray()
@@ -343,6 +355,18 @@ export const validateTaskUpdateInput = [
         .optional()
         .isIn(['todo', 'in_progress', 'done'])
         .withMessage('Status must be todo, in_progress, or done'),
+    body('startDate')
+        .optional({nullable: true})
+        .isISO8601()
+        .withMessage('Start date must be a valid ISO 8601 date'),
+    body('estimateMinutes')
+        .optional({nullable: true})
+        .isInt({min: 0, max: 60 * 24 * 365})
+        .withMessage('Estimate must be a whole number of minutes'),
+    body('checklist')
+        .optional({nullable: true})
+        .isArray({max: 100})
+        .withMessage('Checklist must be an array of at most 100 items'),
     body('assignees')
         .optional()
         .isArray()

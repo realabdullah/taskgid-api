@@ -11,6 +11,7 @@ import TaskTag from "../models/TaskTag.js";
 import User from "../models/User.js";
 import { Workspace } from "../models/Workspace.js";
 import notificationService from "../services/notificationService.js";
+import { normaliseChecklist } from "../utils/checklist.js";
 import {
   logTaskActivity,
   logWorkspaceActivity,
@@ -153,9 +154,15 @@ export const addTask = async (req, res) => {
     const { workspaceSlug } = req.params;
     const workspaceId = await getWorkspaceIdFromSlug(workspaceSlug);
 
-    const { status, priority, dueDate, assignees, tags } = req.body;
+    const { status, priority, dueDate, startDate, estimateMinutes, assignees, tags } =
+      req.body;
     const title = sanitizePlainText(req.body.title);
     const description = sanitizeRichText(req.body.description);
+
+    const { items: checklist, error: checklistError } = normaliseChecklist(
+      req.body.checklist,
+    );
+    if (checklistError) return errorResponse(res, 400, checklistError);
 
     const assigneeIds = await getAssignees(assignees);
     const tagIds = await getTagIds(tags, workspaceId);
@@ -166,6 +173,9 @@ export const addTask = async (req, res) => {
       status,
       priority,
       dueDate,
+      startDate,
+      estimateMinutes,
+      checklist,
       workspaceId,
       createdById: req.user.id,
     });
@@ -356,8 +366,18 @@ export const updateTask = async (req, res) => {
       "status",
       "priority",
       "dueDate",
+      "startDate",
+      "estimateMinutes",
     ];
     const updatePayload = {};
+
+    // The checklist is replaced wholesale rather than patched item by item, so
+    // reordering, editing and completing are all the same request.
+    if (updateData.checklist !== undefined) {
+      const { items, error } = normaliseChecklist(updateData.checklist);
+      if (error) return errorResponse(res, 400, error);
+      updatePayload.checklist = items;
+    }
 
     allowedFields.forEach((field) => {
       if (updateData[field] !== undefined) {
