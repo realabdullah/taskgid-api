@@ -119,6 +119,16 @@ To force sync (drops all tables and recreates them — destroys data):
 npm run db:sync:force
 ```
 
+## Realtime
+
+Workspace events are implemented over SSE in `src/services/workspaceEvents.js`,
+which assumes one long-lived Node process. **It does not function on Vercel**:
+the invocation holding a stream and the invocation publishing an event do not
+share memory, so nothing is delivered, and function duration limits would end
+the stream anyway. The frontend falls back to refetch-on-window-focus, so the
+app stays correct — just not live. Moving the persistent connection to hosted
+Pusher (already configured) is the fix.
+
 ## Scheduled jobs
 
 Digest emails are built and gated by user preferences and timezone, but nothing
@@ -130,9 +140,10 @@ every timezone:
 0 * * * *  cd /path/to/taskgid-api && npm run digests:send
 ```
 
-On Railway this is a separate cron service running `npm run digests:send`, not a
-setting on the API service. Running it inside the API process is deliberately
-avoided so a restart or a second replica cannot double-send.
+On Vercel this is a Cron Job hitting a route that calls the runner, or any
+external scheduler invoking `npm run digests:send`. Running it inside the API
+process is deliberately avoided so a restart or a second instance cannot
+double-send.
 
 ## API Documentation
 
