@@ -90,17 +90,49 @@ npm run dev
 npm start
 ```
 
-## Database Synchronization
+## Database schema
 
-To sync the database with the models:
+Migrations are the source of truth for schema changes and run automatically on
+deploy, before the server starts (see the `CMD` in the Dockerfile). Order
+matters: `sequelize.sync()` creates missing **tables** but never missing
+**columns**, so booting first leaves a new column absent and fails on the first
+query that selects it.
+
+Apply migrations by hand with:
+```
+npm run db:migrate
+```
+
+Migrations are written to be safe against a database that `sync()` built before
+migrations were introduced — see `scripts/migration-helpers.cjs`. They check
+before they add, so the same set applies cleanly to a fresh database and to one
+that already has the objects.
+
+To sync the models directly (development convenience, not a substitute for a
+migration):
 ```
 npm run db:sync
 ```
 
-To force sync the database (drops all tables and recreates them):
+To force sync (drops all tables and recreates them — destroys data):
 ```
 npm run db:sync:force
 ```
+
+## Scheduled jobs
+
+Digest emails are built and gated by user preferences and timezone, but nothing
+sends them until something calls the runner. Schedule it hourly; it works out
+who is due based on each recipient's local time, so an hourly run is enough for
+every timezone:
+
+```
+0 * * * *  cd /path/to/taskgid-api && npm run digests:send
+```
+
+On Railway this is a separate cron service running `npm run digests:send`, not a
+setting on the API service. Running it inside the API process is deliberately
+avoided so a restart or a second replica cannot double-send.
 
 ## API Documentation
 

@@ -13,5 +13,7 @@ RUN npm install
 # Copy the rest of the application code to the working directory
 COPY . .
 
-# Start the application
-CMD ["npm", "start"]
+# Migrations run before the server, not after it. sequelize.sync() creates
+# missing tables but never missing columns, so a boot-first order leaves the
+# schema half-applied and fails on the first query for the new column.
+CMD ["sh", "-c", "npm run db:migrate && npm start"]

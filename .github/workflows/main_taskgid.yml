@@ -25,8 +25,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # There is no test suite yet; --if-present keeps this honest instead of
+      # failing the whole workflow on a missing script.
       - name: Run tests
-        run: npm test
+        run: npm test --if-present
+
+      - name: Lint
+        run: npm run lint --if-present
+        continue-on-error: true
 
       - name: Build application
         run: npm run build --if-present
