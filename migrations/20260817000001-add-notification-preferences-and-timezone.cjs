@@ -8,8 +8,8 @@ const {
 } = require('../scripts/migration-helpers.cjs');
 
 /**
- * Phase 3: per-user notification preferences, a timezone on the user, and the
- * read markers behind unread comment counts.
+ * Per-user notification preferences, a timezone on the user, and the read
+ * markers behind unread comment counts.
  *
  * `users.timezone` is the critical one: the User model declares it, so every
  * query that touches a user selects it. Without this migration the column is
