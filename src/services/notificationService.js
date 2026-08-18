@@ -1,6 +1,6 @@
 import { Novu } from "@novu/node";
 import "dotenv/config";
-import Pusher from "pusher";
+import pusherClient, { userChannel } from "../utils/pusherClient.js";
 import { NOTIFICATION_TYPES } from "../constants/notificationTypes.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
@@ -25,26 +25,7 @@ class NotificationService {
    */
   initialize() {
     // Initialize Pusher
-    if (
-      !process.env.PUSHER_APP_ID ||
-      !process.env.PUSHER_KEY ||
-      !process.env.PUSHER_SECRET ||
-      !process.env.PUSHER_CLUSTER
-    ) {
-      console.warn("Pusher configuration is incomplete");
-    } else {
-      try {
-        this.pusher = new Pusher({
-          appId: process.env.PUSHER_APP_ID,
-          key: process.env.PUSHER_KEY,
-          secret: process.env.PUSHER_SECRET,
-          cluster: process.env.PUSHER_CLUSTER,
-          useTLS: true,
-        });
-      } catch (error) {
-        console.error("Pusher initialization failed:", error);
-      }
-    }
+    this.pusher = pusherClient;
 
     // Initialize Novu
     if (!process.env.NOVU_API_KEY) {
@@ -292,7 +273,7 @@ class NotificationService {
    */
   async sendPusherNotification(userId, event, data) {
     if (!this.pusher) return;
-    const channel = `private-user-${userId}`;
+    const channel = userChannel(userId);
     await this.pusher.trigger(channel, event, {
       ...data,
       timestamp: new Date().toISOString(),
