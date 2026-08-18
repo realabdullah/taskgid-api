@@ -1,16 +1,18 @@
-# GitHub Actions workflow for Railway deployment
-# More info: https://docs.railway.app/deploy/github-actions
-
-name: Deploy to Railway
+# Vercel deploys this repo through its own Git integration, so this workflow
+# does not deploy. It runs the checks, then applies migrations — the one step
+# Vercel has no place to run, because a serverless function has no boot phase
+# to hang a migration off.
+name: CI and migrations
 
 on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
 
     steps:
@@ -34,10 +36,31 @@ jobs:
         run: npm run lint --if-present
         continue-on-error: true
 
-      - name: Build application
-        run: npm run build --if-present
+  migrate:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
 
-      - name: Deploy to Railway
-        uses: bervProject/railway-deploy@main
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v3
         with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Skips rather than fails when the secret is absent, so adding it is a
+      # deliberate step and a fork's CI does not error on a missing credential.
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is not set — skipping migrations."
+            echo "Add it as a repository secret to apply them automatically."
+            exit 0
+          fi
+          npm run db:migrate

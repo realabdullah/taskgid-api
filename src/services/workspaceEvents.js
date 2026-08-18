@@ -5,10 +5,20 @@
  * one-directional (server to client) and the existing JWT is enough to
  * authorise the request. No second process, no broker, no extra auth story.
  *
- * Scope: subscribers are held in this process's memory, so a single Node
- * instance serves them correctly. Running more than one instance needs a shared
- * fan-out (Postgres LISTEN/NOTIFY or Redis pub/sub) publishing into `emit`;
- * everything else here, including the client contract, stays the same.
+ * Scope: subscribers are held in this process's memory, so a single long-lived
+ * Node instance serves them correctly.
+ *
+ * KNOWN LIMITATION — this does not work on Vercel, where the API now runs.
+ * A serverless invocation holding an SSE stream and the invocation that
+ * publishes an event are different processes with different copies of this
+ * module, so `subscribers` is always empty at publish time and no event is ever
+ * delivered. Function duration limits would cut the stream regardless.
+ *
+ * Making realtime work on serverless means moving the persistent connection off
+ * this server entirely — hosted Pusher is already configured (PUSHER_* env vars
+ * and /api/pusher/auth exist) and is the natural fit, since the client connects
+ * to Pusher and this code only POSTs events to it. Until then the frontend
+ * degrades to refetch-on-window-focus, which is why that fallback exists.
  */
 import {randomUUID} from 'crypto';
 
