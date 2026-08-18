@@ -25,6 +25,9 @@ concurrency:
 jobs:
   spawn:
     runs-on: ubuntu-latest
+    # `DATABASE_URL` is an environment secret, not a repository one, so a job
+    # that does not name the environment never receives it and skips silently.
+    environment: Production
 
     steps:
       - uses: actions/checkout@v4
