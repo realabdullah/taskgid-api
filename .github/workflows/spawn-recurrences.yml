@@ -1,0 +1,58 @@
+# Creates a task for every recurrence occurrence that has come due.
+#
+# The runner reaches the database directly rather than calling the API, so this
+# needs no public trigger route and nothing has to be exposed in order to
+# schedule it. It uses the same credential the migration job does.
+#
+# GitHub's scheduler is best-effort and can run late under load. That is
+# tolerable here: occurrences are claimed strictly after the last one already
+# spawned, so a late run catches up and a repeated run creates nothing twice.
+name: Spawn recurring tasks
+
+on:
+  schedule:
+    # Hourly. The shortest rule this supports is daily, so an hourly run is
+    # ample; running more often would change nothing.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+# Overlapping runs would be safe — the watermark prevents double-creation —
+# but there is no reason to pay for one.
+concurrency:
+  group: spawn-recurrences
+  cancel-in-progress: false
+
+jobs:
+  spawn:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repo is on pnpm; npm caching finds no lockfile and the install
+      # fails outright.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Skips rather than fails when the secret is absent, so a fork does not
+      # error on a missing credential and adding it stays a deliberate step.
+      - name: Spawn due occurrences
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is not set — skipping."
+            echo "Add it as a repository secret to start spawning recurring tasks."
+            exit 0
+          fi
+          pnpm recurrences:spawn

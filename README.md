@@ -151,9 +151,28 @@ every timezone:
 ```
 
 On Vercel this is a Cron Job hitting a route that calls the runner, or any
-external scheduler invoking `npm run digests:send`. Running it inside the API
+external scheduler invoking `pnpm digests:send`. Running it inside the API
 process is deliberately avoided so a restart or a second instance cannot
-double-send.
+double-send. Nothing schedules this yet — the command exists and no scheduler
+calls it.
+
+Recurring tasks need the same treatment, and this one **is** scheduled.
+`.github/workflows/spawn-recurrences.yml` runs hourly and calls
+
+```
+pnpm recurrences:spawn
+```
+
+It reaches the database directly using the `DATABASE_URL` repository secret —
+the same credential the migration job uses — so no public trigger route has to
+exist for a scheduler to reach. The job skips itself when that secret is
+absent; without it, rules are stored and no task is ever created.
+
+The schedule is best-effort: GitHub can run it late under load, which is safe
+here. Occurrences are claimed strictly after the last one already turned into a
+task, so a late run catches up and a repeated run creates nothing twice. Any
+scheduler that invokes the script hourly works as well — a crontab entry, or a
+Vercel Cron Job hitting a route that calls `spawnDueOccurrences`.
 
 ## API Documentation
 
