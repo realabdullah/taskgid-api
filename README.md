@@ -121,13 +121,23 @@ npm run db:sync:force
 
 ## Realtime
 
-Workspace events are implemented over SSE in `src/services/workspaceEvents.js`,
-which assumes one long-lived Node process. **It does not function on Vercel**:
-the invocation holding a stream and the invocation publishing an event do not
-share memory, so nothing is delivered, and function duration limits would end
-the stream anyway. The frontend falls back to refetch-on-window-focus, so the
-app stays correct — just not live. Moving the persistent connection to hosted
-Pusher (already configured) is the fix.
+Workspace events (`task.created`, `task.updated`, `task.deleted`,
+`comment.created`) are published to Pusher by
+`src/services/workspaceEvents.js`. The persistent connection lives on Pusher, so
+this API only makes a stateless HTTP call — which is what lets realtime work on
+Vercel, where a function cannot hold a stream open.
+
+Subscription is authorised by `POST /api/pusher/auth` against real workspace
+membership, so a member of one workspace cannot subscribe to another's channel.
+Anything not explicitly recognised is refused.
+
+Without `PUSHER_*` credentials, publishing is a silent no-op and the frontend
+falls back to refetch-on-window-focus. Realtime is an enhancement, never a
+correctness requirement.
+
+`PUSHER_HOST`, `PUSHER_PORT` and `PUSHER_USE_TLS` point the client at any
+Pusher-protocol server — a self-hosted Sockudo or Soketi — without an
+application code change.
 
 ## Scheduled jobs
 
