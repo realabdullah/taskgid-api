@@ -1,8 +1,8 @@
 /**
  * Daily and weekly digest emails.
  *
- * Two rules govern every send: the recipient must have opted in (Phase 3.2
- * preferences), and "today" is decided in their own timezone (Phase 3.3), not
+ * Two rules govern every send: the recipient must have opted in via their
+ * notification preferences, and "today" is decided in their own timezone, not
  * the server's. A digest that arrives at 3am or lists yesterday's work as due
  * today is worse than no digest at all.
  */
