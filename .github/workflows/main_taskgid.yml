@@ -18,39 +18,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
+      # The repo is on pnpm; `npm ci` with npm caching failed on every run
+      # because there is no npm lockfile to find.
+      - uses: pnpm/action-setup@v4
         with:
-          node-version: '20.x'
-          cache: 'npm'
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # There is no test suite yet; --if-present keeps this honest instead of
       # failing the whole workflow on a missing script.
       - name: Run tests
-        run: npm test --if-present
+        run: pnpm test --if-present
 
       - name: Lint
-        run: npm run lint --if-present
+        run: pnpm lint
         continue-on-error: true
 
   migrate:
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    # `DATABASE_URL` lives on this environment rather than on the repository.
+    # Without naming it the secret arrives empty and every run has skipped.
+    environment: Production
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v3
+      - uses: pnpm/action-setup@v4
         with:
-          node-version: '20.x'
-          cache: 'npm'
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Skips rather than fails when the secret is absent, so adding it is a
       # deliberate step and a fork's CI does not error on a missing credential.
@@ -63,4 +76,4 @@ jobs:
             echo "Add it as a repository secret to apply them automatically."
             exit 0
           fi
-          npm run db:migrate
+          pnpm db:migrate

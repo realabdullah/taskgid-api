@@ -17,6 +17,7 @@ import Tag from './Tag.js';
 import TaskTag from './TaskTag.js';
 import NotificationPreference from './NotificationPreference.js';
 import TaskRead from './TaskRead.js';
+import TaskRecurrence from './TaskRecurrence.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -50,6 +51,14 @@ Task.hasMany(Comment, {foreignKey: 'taskId', as: 'comments'});
 Task.hasMany(Attachment, {foreignKey: 'taskId', as: 'attachments'});
 Task.hasMany(TaskActivity, {foreignKey: 'taskId', as: 'activities'});
 Task.belongsToMany(Tag, {through: TaskTag, as: 'tags', foreignKey: 'taskId'});
+Task.belongsTo(Task, {foreignKey: 'parentId', as: 'parent'});
+Task.hasMany(Task, {foreignKey: 'parentId', as: 'subtasks'});
+Task.belongsTo(TaskRecurrence, {foreignKey: 'recurrenceId', as: 'recurrence'});
+
+// TaskRecurrence associations
+TaskRecurrence.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+TaskRecurrence.belongsTo(User, {foreignKey: 'createdById', as: 'creator'});
+TaskRecurrence.hasMany(Task, {foreignKey: 'recurrenceId', as: 'instances'});
 
 // Comment associations
 Comment.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});

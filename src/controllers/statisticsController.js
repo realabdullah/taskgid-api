@@ -7,6 +7,7 @@ import {getUserRoleInWorkspace} from '../utils/workspaceUtils.js';
 import {errorResponse} from '../utils/responseUtils.js';
 import {Op} from 'sequelize';
 import sequelize from '../config/database.js';
+import {SUBTASKS_ONLY, TOP_LEVEL_ONLY, topLevelOnlySql} from '../utils/taskScope.js';
 
 const TASK_STATUSES = ['todo', 'in_progress', 'done'];
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
@@ -76,8 +77,9 @@ export const getWorkspaceStatistics = async (req, res) => {
             return errorResponse(res, 403, 'Access denied');
         }
 
+        // Top-level only; subtasks are reported separately below.
         const totalTasksResult = await Task.count({
-            where: {workspaceId},
+            where: {workspaceId, ...TOP_LEVEL_ONLY},
         });
         const totalTasks = totalTasksResult;
 
@@ -86,7 +88,7 @@ export const getWorkspaceStatistics = async (req, res) => {
                 'status',
                 [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
             ],
-            where: {workspaceId},
+            where: {workspaceId, ...TOP_LEVEL_ONLY},
             group: ['status'],
             raw: true,
         });
@@ -96,7 +98,7 @@ export const getWorkspaceStatistics = async (req, res) => {
                 'priority',
                 [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
             ],
-            where: {workspaceId},
+            where: {workspaceId, ...TOP_LEVEL_ONLY},
             group: ['priority'],
             raw: true,
         });
@@ -107,7 +109,7 @@ export const getWorkspaceStatistics = async (req, res) => {
                 'status',
                 [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
             ],
-            where: {workspaceId},
+            where: {workspaceId, ...TOP_LEVEL_ONLY},
             group: ['priority', 'status'],
             raw: true,
         });
@@ -115,6 +117,7 @@ export const getWorkspaceStatistics = async (req, res) => {
         const completedTasksCount = await Task.count({
             where: {
                 workspaceId,
+                ...TOP_LEVEL_ONLY,
                 status: 'done',
             },
         });
@@ -122,6 +125,7 @@ export const getWorkspaceStatistics = async (req, res) => {
         const completedYesterdayCount = await Task.count({
             where: {
                 workspaceId,
+                ...TOP_LEVEL_ONLY,
                 status: 'done',
                 updatedAt: {
                     [Op.between]: [yesterdayStart, yesterdayEnd],
@@ -132,6 +136,7 @@ export const getWorkspaceStatistics = async (req, res) => {
         const inProgressTasksCount = await Task.count({
             where: {
                 workspaceId,
+                ...TOP_LEVEL_ONLY,
                 status: 'in_progress',
             },
         });
@@ -139,6 +144,7 @@ export const getWorkspaceStatistics = async (req, res) => {
         const overdueTasksCount = await Task.count({
             where: {
                 workspaceId,
+                ...TOP_LEVEL_ONLY,
                 status: {
                     [Op.ne]: 'done',
                 },
@@ -151,6 +157,7 @@ export const getWorkspaceStatistics = async (req, res) => {
         const newlyOverdueCount = await Task.count({
             where: {
                 workspaceId,
+                ...TOP_LEVEL_ONLY,
                 status: {
                     [Op.ne]: 'done',
                 },
@@ -176,10 +183,18 @@ export const getWorkspaceStatistics = async (req, res) => {
                     model: Task,
                     as: 'task',
                     attributes: [],
-                    where: {workspaceId},
+                    where: {workspaceId, ...TOP_LEVEL_ONLY},
                     required: true,
                 },
             ],
+        });
+
+        const subtaskTotal = await Task.count({
+            where: {workspaceId, ...SUBTASKS_ONLY},
+        });
+
+        const subtaskCompleted = await Task.count({
+            where: {workspaceId, ...SUBTASKS_ONLY, status: 'done'},
         });
 
         const statusCounts = TASK_STATUSES.reduce(
@@ -263,6 +278,7 @@ export const getWorkspaceStatistics = async (req, res) => {
              FROM tasks t 
              JOIN task_assignees ta ON t.id = ta.task_id 
              WHERE t.workspace_id = :workspaceId 
+             AND ${topLevelOnlySql('t')} 
              AND ta.user_id IN (:memberIds) 
              GROUP BY ta.user_id`,
             {
@@ -277,6 +293,7 @@ export const getWorkspaceStatistics = async (req, res) => {
              FROM tasks t 
              JOIN task_assignees ta ON t.id = ta.task_id 
              WHERE t.workspace_id = :workspaceId 
+             AND ${topLevelOnlySql('t')} 
              AND ta.user_id IN (:memberIds) 
              AND t.status = 'done' 
              GROUP BY ta.user_id`,
@@ -333,6 +350,11 @@ export const getWorkspaceStatistics = async (req, res) => {
                 count: overdueTasksCount,
                 percentage: calculatePercentage(overdueTasksCount, totalTasks),
                 newlyOverdueYesterday: newlyOverdueCount,
+            },
+            subtasks: {
+                total: subtaskTotal,
+                completed: subtaskCompleted,
+                percentage: calculatePercentage(subtaskCompleted, subtaskTotal),
             },
             statusBreakdown: statusCounts,
             priorityBreakdown: priorityCounts,

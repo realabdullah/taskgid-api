@@ -60,6 +60,42 @@ Task.init(
             type: DataTypes.DATE,
             allowNull: true,
         },
+        startDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        estimateMinutes: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+        },
+        checklist: {
+            // Ordered {id, text, done} items.
+            type: DataTypes.JSONB,
+            allowNull: false,
+            defaultValue: [],
+        },
+        recurrenceId: {
+            // Nulled, not cascaded, when the rule is deleted.
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'task_recurrences',
+                key: 'id',
+            },
+        },
+        occurrenceDate: {
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        parentId: {
+            // NULL means top-level. Completion never cascades either way.
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'tasks',
+                key: 'id',
+            },
+        },
         workspaceId: {
             type: DataTypes.UUID,
             allowNull: false,

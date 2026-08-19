@@ -62,6 +62,8 @@ export const localParts = (at, timezone) => {
  * @return {Promise<Array<Object>>} Task rows with their workspace.
  */
 const openTasksFor = async (userId) => {
+    // Scoped to one person's assignments, which cuts across the hierarchy: an
+    // overdue subtask assigned to someone belongs in their digest.
     return Task.findAll({
         where: {status: {[Op.in]: ['todo', 'in_progress']}},
         include: [

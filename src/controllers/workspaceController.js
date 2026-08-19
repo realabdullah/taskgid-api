@@ -17,6 +17,7 @@ import {
 import { errorResponse, successResponse } from "../utils/responseUtils.js";
 import { sanitizePlainText, sanitizeRichText } from "../utils/sanitizer.js";
 import { getUserRoleInWorkspace } from "../utils/workspaceUtils.js";
+import { TOP_LEVEL_ONLY } from "../utils/taskScope.js";
 
 /**
  * Find a workspace by slug and check if user has access
@@ -915,7 +916,9 @@ export const getComprehensiveTeamMembers = async (req, res) => {
           model: Task,
           as: "task",
           attributes: [],
-          where: { workspaceId: workspace.id },
+          // A headline figure: top-level work only, so a member's counts mean
+          // the same thing they did before subtasks existed.
+          where: { workspaceId: workspace.id, ...TOP_LEVEL_ONLY },
           required: true,
         },
       ],
@@ -934,7 +937,11 @@ export const getComprehensiveTeamMembers = async (req, res) => {
           model: Task,
           as: "task",
           attributes: [],
-          where: { workspaceId: workspace.id, status: "done" },
+          where: {
+            workspaceId: workspace.id,
+            ...TOP_LEVEL_ONLY,
+            status: "done",
+          },
           required: true,
         },
       ],
@@ -1036,8 +1043,10 @@ export const getUserTasks = async (req, res) => {
     if (!isMember)
       return errorResponse(res, 404, "User is not a member of this workspace");
 
+    // A member filter crosses the hierarchy; `parentId` ships so the client
+    // can mark nested rows.
     const { count, rows: tasks } = await Task.findAndCountAll({
-      attributes: ["id", "title", "dueDate", "priority", "status"],
+      attributes: ["id", "title", "dueDate", "priority", "status", "parentId"],
       where: {
         workspaceId: workspace.id,
       },
@@ -1177,6 +1186,7 @@ export const getTeamStatistics = async (req, res) => {
     const allTasks = await Task.findAll({
       where: {
         workspaceId: workspace.id,
+        ...TOP_LEVEL_ONLY,
         createdAt: { [Op.gte]: startDate },
       },
       include: [
@@ -1470,8 +1480,10 @@ export const exportWorkspaceDataCSV = async (req, res) => {
     // Include tasks if requested
     if (includeTasks === "true") {
       csvContent += `TASKS\n`;
-      csvContent += `ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Comment Count,Created At,Updated At\n`;
+      csvContent += `ID,Parent Task ID,Title,Description,Status,Priority,Due Date,Creator,Assignees,Comment Count,Created At,Updated At\n`;
 
+      // An export is a record rather than a headline figure, so it carries
+      // every task and names each one's parent.
       const tasks = await Task.findAll({
         where: { workspaceId: workspace.id },
         include: [
@@ -1509,6 +1521,7 @@ export const exportWorkspaceDataCSV = async (req, res) => {
         csvContent +=
           [
             task.id,
+            task.parentId || "",
             `"${task.title.replace(/"/g, '""')}"`,
             `"${(task.description || "").replace(/"/g, '""')}"`,
             task.status,
@@ -1565,7 +1578,8 @@ export const exportWorkspaceDataCSV = async (req, res) => {
             model: Task,
             as: "task",
             attributes: [],
-            where: { workspaceId: workspace.id },
+            // Matches the member figures the team endpoint reports.
+            where: { workspaceId: workspace.id, ...TOP_LEVEL_ONLY },
             required: true,
           },
         ],
@@ -1584,7 +1598,11 @@ export const exportWorkspaceDataCSV = async (req, res) => {
             model: Task,
             as: "task",
             attributes: [],
-            where: { workspaceId: workspace.id, status: "done" },
+            where: {
+              workspaceId: workspace.id,
+              ...TOP_LEVEL_ONLY,
+              status: "done",
+            },
             required: true,
           },
         ],
