@@ -28,6 +28,7 @@ import {
     checkSuperAdminMiddleware,
 } from '../middleware/workspaceMiddleware.js';
 import tagRoutes from './tagRoutes.js';
+import webhookRoutes from './webhookRoutes.js';
 
 const router = new express.Router();
 
@@ -50,6 +51,9 @@ router.get('/:slug/export/csv', checkAdminMiddleware, exportWorkspaceDataCSV);
 
 // --- Tag Management (by Workspace Slug) ---
 router.use('/:workspaceSlug/tags', checkMemberMiddleware, tagRoutes);
+
+// --- Webhook Management (by Workspace Slug) ---
+router.use('/:workspaceSlug/webhooks', checkAdminMiddleware, webhookRoutes);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', checkMemberMiddleware, getWorkspaceTeam);

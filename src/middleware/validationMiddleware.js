@@ -451,3 +451,66 @@ export const validateSignupAllowlist = (req, res, next) => {
             'Contact an administrator to request access.',
     });
 };
+
+const VALID_WEBHOOK_EVENT_TYPES = ['task.created', 'task.updated', 'task.deleted', 'comment.created'];
+
+const reportValidationErrors = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            errors: errors.array().map((err) => ({
+                field: err.param,
+                message: err.msg,
+            })),
+        });
+    }
+    next();
+};
+
+const webhookDescriptionRule = body('description')
+    .optional({nullable: true})
+    .trim()
+    .isLength({max: 200})
+    .withMessage('Description cannot exceed 200 characters');
+
+const webhookEventTypesRule = body('eventTypes')
+    .optional()
+    .isArray({min: 1})
+    .withMessage('eventTypes must be a non-empty array')
+    .custom((value) => value.every((type) => VALID_WEBHOOK_EVENT_TYPES.includes(type)))
+    .withMessage(`eventTypes must be one of: ${VALID_WEBHOOK_EVENT_TYPES.join(', ')}`);
+
+const webhookIsActiveRule = body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean');
+
+/**
+ * Validates a webhook endpoint creation request. URL is required.
+ * @return {Array} Express-validator chain plus the error-reporting handler.
+ */
+export const validateWebhookEndpointCreate = [
+    body('url')
+        .isURL({protocols: ['https'], require_protocol: true})
+        .withMessage('Webhook URL must be a valid https URL'),
+    webhookDescriptionRule,
+    webhookEventTypesRule,
+    webhookIsActiveRule,
+    reportValidationErrors,
+];
+
+/**
+ * Validates a webhook endpoint update request. Every field, including URL, is optional.
+ * @return {Array} Express-validator chain plus the error-reporting handler.
+ */
+export const validateWebhookEndpointUpdate = [
+    body('url')
+        .optional()
+        .isURL({protocols: ['https'], require_protocol: true})
+        .withMessage('Webhook URL must be a valid https URL'),
+    webhookDescriptionRule,
+    webhookEventTypesRule,
+    webhookIsActiveRule,
+    reportValidationErrors,
+];

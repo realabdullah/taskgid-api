@@ -21,6 +21,11 @@ import {
   WORKSPACE_EVENTS,
 } from "../services/workspaceEvents.js";
 import {
+  persistWorkspaceEvent,
+  queueDeliveriesForEvent,
+  dispatchQueuedDeliveries,
+} from "../services/webhookService.js";
+import {
   createPaginatedResponse,
   getPaginationParams,
 } from "../utils/pagination.js";
@@ -225,18 +230,36 @@ export const addTask = async (req, res) => {
     const assigneeIds = await getAssignees(assignees);
     const tagIds = await getTagIds(tags, workspaceId);
 
-    const task = await Task.create({
-      title,
-      description,
-      status,
-      priority,
-      dueDate,
-      startDate,
-      estimateMinutes,
-      checklist,
-      parentId: parentId || null,
-      workspaceId,
-      createdById: req.user.id,
+    let task;
+    let webhookDeliveries;
+    await sequelize.transaction(async (t) => {
+      task = await Task.create(
+        {
+          title,
+          description,
+          status,
+          priority,
+          dueDate,
+          startDate,
+          estimateMinutes,
+          checklist,
+          parentId: parentId || null,
+          workspaceId,
+          createdById: req.user.id,
+        },
+        { transaction: t },
+      );
+
+      const event = await persistWorkspaceEvent(
+        {
+          workspaceId,
+          type: WORKSPACE_EVENTS.TASK_CREATED,
+          actorId: req.user?.id,
+          payload: { taskId: task.id },
+        },
+        { transaction: t },
+      );
+      webhookDeliveries = await queueDeliveriesForEvent(event, { transaction: t });
     });
 
     if (assigneeIds.length > 0) {
@@ -334,6 +357,7 @@ export const addTask = async (req, res) => {
       actorId: req.user?.id,
       payload: { taskId: populatedTask.id },
     });
+    await dispatchQueuedDeliveries(webhookDeliveries);
     return successResponse(res, { data: populatedTask.toJSON() }, 201);
   } catch (error) {
     console.error("Add Task Error:", error);
@@ -462,7 +486,23 @@ export const updateTask = async (req, res) => {
       }
     });
 
-    if (Object.keys(updatePayload).length > 0) await task.update(updatePayload);
+    let webhookDeliveries;
+    await sequelize.transaction(async (t) => {
+      if (Object.keys(updatePayload).length > 0) {
+        await task.update(updatePayload, { transaction: t });
+      }
+
+      const event = await persistWorkspaceEvent(
+        {
+          workspaceId,
+          type: WORKSPACE_EVENTS.TASK_UPDATED,
+          actorId: req.user?.id,
+          payload: { taskId: task.id, status: task.status },
+        },
+        { transaction: t },
+      );
+      webhookDeliveries = await queueDeliveriesForEvent(event, { transaction: t });
+    });
 
     const usersToNotify = new Set([
       ...(newAssigneeIds || []),
@@ -709,6 +749,7 @@ export const updateTask = async (req, res) => {
       actorId: req.user?.id,
       payload: { taskId: updatedTask.id, status: updatedTask.status },
     });
+    await dispatchQueuedDeliveries(webhookDeliveries);
     return successResponse(res, { data: updatedTask.toJSON() });
   } catch (error) {
     console.error("Update Task Error:", error);
@@ -835,8 +876,22 @@ export const deleteTask = async (req, res) => {
 
     const meta = { taskId: task.id, taskTitle: task.title };
 
-    await TaskAssignee.destroy({ where: { taskId: task.id } });
-    await task.destroy();
+    let webhookDeliveries;
+    await sequelize.transaction(async (t) => {
+      await TaskAssignee.destroy({ where: { taskId: task.id }, transaction: t });
+      await task.destroy({ transaction: t });
+
+      const event = await persistWorkspaceEvent(
+        {
+          workspaceId,
+          type: WORKSPACE_EVENTS.TASK_DELETED,
+          actorId: req.user?.id,
+          payload: { taskId: meta.taskId },
+        },
+        { transaction: t },
+      );
+      webhookDeliveries = await queueDeliveriesForEvent(event, { transaction: t });
+    });
 
     await logWorkspaceActivity(workspaceId, req.user.id, "task_deleted", meta);
 
@@ -846,6 +901,7 @@ export const deleteTask = async (req, res) => {
       actorId: req.user?.id,
       payload: { taskId: meta.taskId },
     });
+    await dispatchQueuedDeliveries(webhookDeliveries);
     return successResponse(res, { message: "Task deleted successfully" });
   } catch (error) {
     console.error("Delete Task Error:", error);

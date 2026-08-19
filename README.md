@@ -65,18 +65,46 @@ membership. Without `PUSHER_*` credentials configured, publishing is a no-op.
 `PUSHER_HOST`, `PUSHER_PORT`, and `PUSHER_USE_TLS` point the client at any
 Pusher-protocol-compatible server instead of Pusher's own.
 
+## Webhooks
+
+The same four events also persist to `workspace_events`, in the same
+transaction as the row change they describe, and queue a delivery for every
+active endpoint a workspace has configured. The first attempt fires
+synchronously, right after that transaction commits; a failed attempt retries
+on the backoff schedule in `src/services/webhookService.js`, driven by
+`pnpm webhooks:retry`.
+
+Endpoint URLs must be `https` and cannot point at a private, loopback, or
+link-local address — a workspace member's webhook URL is a server-side
+outbound request target, so this only guards against the address given at
+creation time, not one a hostname later resolves to.
+
+Deliveries are signed: `X-Taskgid-Signature: t=<unix seconds>,v1=<hex>`, where
+the hex value is `HMAC-SHA256(secret, "{timestamp}.{body}")`. `X-Taskgid-Delivery`
+carries a stable id across retries of the same delivery, for deduplication.
+
+Managed at `/workspaces/:workspaceSlug/webhooks`, admin or creator only:
+
+- `GET /` — list endpoints, without secrets
+- `POST /` — create; response carries the signing secret once
+- `PATCH /:id` — update url, description, subscribed events, or active state
+- `POST /:id/rotate-secret` — issue a new secret, invalidating the old one
+- `DELETE /:id` — remove, along with its delivery history
+- `GET /:id/deliveries` — paginated delivery log
+
 ## Scheduled jobs
 
 | Job | Command | Schedule |
 | --- | --- | --- |
 | Digest emails | `pnpm digests:send` | Not currently scheduled |
 | Recurring task spawner | `pnpm recurrences:spawn` | `.github/workflows/spawn-recurrences.yml`, daily |
+| Webhook delivery retries | `pnpm webhooks:retry` | `.github/workflows/retry-webhook-deliveries.yml`, manual trigger only |
 
-Both read due work based on each record's own time zone or watermark, so a
-run that happens late catches up and a run that happens twice is a no-op.
+Each reads due work based on its own time zone or watermark, so a run that
+happens late catches up and a run that happens twice is a no-op.
 
-The recurrence workflow needs `DATABASE_URL` on the **Production** GitHub
-environment; a job must declare `environment: Production` to receive it.
+These workflows need `DATABASE_URL` on the **Production** GitHub environment;
+a job must declare `environment: Production` to receive it.
 
 ## Calendar feed
 
