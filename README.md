@@ -78,6 +78,19 @@ run that happens late catches up and a run that happens twice is a no-op.
 The recurrence workflow needs `DATABASE_URL` on the **Production** GitHub
 environment; a job must declare `environment: Production` to receive it.
 
+## Calendar feed
+
+`GET /calendar/:token.ics` serves one user's tasks with a due date as a
+read-only iCalendar feed. The token is the credential; only its hash is
+stored. Manage it while authenticated:
+
+- `GET /users/calendar-feed` → `{enabled}`
+- `POST /users/calendar-feed` → generates or rotates the token, returning
+  `{url}` once
+- `DELETE /users/calendar-feed` → revokes it
+
+`PUBLIC_API_URL` sets the origin used to build the feed URL.
+
 ## Notifications
 
 - **In-app / push** — Novu, configured via `NOVU_API_KEY`.
