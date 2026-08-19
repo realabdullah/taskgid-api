@@ -103,13 +103,7 @@ const unreadCommentCountSql = (userId) => {
   )`;
 };
 
-/*
- * A parent's subtask progress, as two scalar subqueries.
- *
- * Completion does not cascade: a parent is done when someone marks it done,
- * not when its children are. These figures let a parent *report* "3 of 5 done"
- * without that reporting turning into enforcement.
- */
+/** A parent's subtask progress. Reporting only — completion never cascades. */
 const SUBTASK_PROGRESS_ATTRIBUTES = [
   [
     sequelize.literal(
@@ -437,8 +431,7 @@ export const updateTask = async (req, res) => {
     ];
     const updatePayload = {};
 
-    // Re-parenting is explicit: `parentId: null` promotes a subtask back to the
-    // top level, which is how a subtask is detached rather than deleted.
+    // `parentId: null` promotes a subtask back to the top level.
     if (updateData.parentId !== undefined) {
       const error = await validateParent(
         updateData.parentId,
@@ -995,14 +988,8 @@ export const fetchWorkspaceTasks = async (req, res) => {
     }
 
     if (parentId) {
-      // Asking for one task's children is the explicit way to see a level of
-      // the hierarchy below the top.
       whereConditions.parentId = parentId;
     } else {
-      // A search term, an assignee or a tag is a deliberate request that cuts
-      // across the hierarchy, so a subtask that matches still surfaces.
-      // Without one, the list is the top level only, and a subtask is reached
-      // through its parent.
       const hasExplicitFilter = Boolean(
         search || assignee || (tagsFilter && tagsFilter.length > 0),
       );
@@ -1451,16 +1438,9 @@ export const advancedSearchTasks = async (req, res) => {
     if (req.query.parentId) {
       whereConditions.parentId = req.query.parentId;
     } else {
-      /*
-       * This endpoint backs the plain workbench list as well as an actual
-       * search, so the scope depends on the request rather than the route: a
-       * search term, an assignee, a creator, a tag or a date range is a
-       * deliberate request that cuts across the hierarchy and pulls matching
-       * subtasks in. Status and priority do not — they narrow the list a
-       * person is already looking at, and the board filters by status per
-       * column, so treating them as cross-cutting would scatter subtasks
-       * through every column.
-       */
+      // Scope follows the request, not the route: this endpoint backs the
+      // plain list as well as a search. Status and priority narrow the current
+      // list rather than crossing the hierarchy.
       const hasExplicitFilter = Boolean(
         search ||
           assignee ||

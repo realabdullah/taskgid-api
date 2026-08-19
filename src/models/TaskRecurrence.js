@@ -1,15 +1,7 @@
 import {DataTypes, Model} from 'sequelize';
 import sequelize from '../config/database.js';
 
-/**
- * A schedule that produces tasks.
- *
- * The rule holds the template for every instance it will create. It is separate
- * from the tasks it has already created so that completing, editing or deleting
- * one instance leaves the schedule untouched — which is the whole point of
- * spawning instances rather than moving a single task's due date forward.
- * @extends Model
- */
+/** A schedule that produces tasks, holding the template for each instance. */
 class TaskRecurrence extends Model {}
 
 TaskRecurrence.init(
@@ -20,12 +12,8 @@ TaskRecurrence.init(
             primaryKey: true,
         },
         rrule: {
-            /*
-             * An RFC 5545 rule, stored as the string a calendar client would
-             * send. Always written with an explicit DTSTART: a rule parsed
-             * without one takes its time-of-day from the moment it is parsed,
-             * so occurrence times would drift with every run.
-             */
+            // RFC 5545. Must carry an explicit DTSTART — without one, rrule
+            // takes the time-of-day from the moment of parsing.
             type: DataTypes.TEXT,
             allowNull: false,
         },
@@ -50,12 +38,7 @@ TaskRecurrence.init(
             defaultValue: [],
         },
         assigneeIds: {
-            /*
-             * Held as ids on the rule rather than through `task_assignees`,
-             * because they describe who *will* be assigned. A join row has to
-             * point at a task, and the task does not exist until the occurrence
-             * comes due.
-             */
+            // Ids, not `task_assignees` rows: the task does not exist yet.
             type: DataTypes.JSONB,
             allowNull: false,
             defaultValue: [],
@@ -71,12 +54,9 @@ TaskRecurrence.init(
             defaultValue: true,
         },
         lastSpawnedAt: {
-            /*
-             * The most recent occurrence already turned into a task, not the
-             * time the spawner last ran. Occurrences are claimed strictly after
-             * this instant, so running twice cannot duplicate a task and
-             * missing a run catches up on the next one.
-             */
+            // The last occurrence turned into a task, not the last run time.
+            // Occurrences are claimed strictly after it, so a repeated run
+            // cannot duplicate and a missed run catches up.
             type: DataTypes.DATE,
             allowNull: true,
         },
