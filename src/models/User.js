@@ -23,6 +23,27 @@ class User extends Model {
     }
 
     /**
+     * Generate a calendar feed token for the user, replacing any existing one.
+     * @return {string} The raw token. Only the hash is persisted.
+     */
+    generateCalendarToken() {
+        const token = crypto.randomBytes(32).toString('base64url');
+        this.calendarTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        return token;
+    }
+
+    /**
+     * Find a user by their raw calendar feed token.
+     * @param {string} token - The raw token from the feed URL.
+     * @return {Promise<User|null>} The matching user, or null.
+     */
+    static async findByCalendarToken(token) {
+        if (!token) return null;
+        const hash = crypto.createHash('sha256').update(token).digest('hex');
+        return this.findOne({where: {calendarTokenHash: hash}});
+    }
+
+    /**
      * Find a user by email and password
      * @param {string} email - User's email
      * @param {string} password - User's password
@@ -59,6 +80,7 @@ class User extends Model {
         delete values.resetPasswordToken;
         delete values.resetPasswordExpires;
         delete values.challenge;
+        delete values.calendarTokenHash;
 
         return values;
     }
@@ -129,6 +151,11 @@ User.init(
         resetPasswordExpires: {
             type: DataTypes.DATE,
             allowNull: true,
+        },
+        calendarTokenHash: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true,
         },
         challenge: {
             type: DataTypes.STRING,
