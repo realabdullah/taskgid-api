@@ -156,39 +156,15 @@ process is deliberately avoided so a restart or a second instance cannot
 double-send. Nothing schedules this yet — the command exists and no scheduler
 calls it.
 
-Recurring tasks need the same treatment, and this one **is** scheduled.
-`.github/workflows/spawn-recurrences.yml` runs once a day and calls
+Recurring tasks are scheduled by `.github/workflows/spawn-recurrences.yml`,
+which runs `pnpm recurrences:spawn` once a day.
 
-```
-pnpm recurrences:spawn
-```
+`DATABASE_URL` is held on the **Production** environment, so any job using it
+must set `environment: Production` or it receives an empty value and skips.
 
-It reaches the database directly using `DATABASE_URL` from the **Production
-environment** — the same credential the migration job uses — so no public
-trigger route has to exist for a scheduler to reach. That secret lives on the
-environment rather than on the repository, so a job must name
-`environment: Production` to receive it; one that does not is handed an empty
-value and skips. The job skips itself when the secret is absent; without it,
-rules are stored and no task is ever created.
-
-The interval is chosen by cost rather than by punctuality. Each run wakes the
-database, which autosuspends when idle, so the bill tracks how often the job
-runs and not how much it does — a run that finds nothing due costs the same as
-one that creates work. Once a day is the floor for a schedule that still runs
-unattended.
-
-The price is lateness. An occurrence is created by the first run *after* it
-falls due, so a task can appear up to a day after the time its rule names, and
-half a day later on average. Raising the frequency is a one-line change to the
-`cron:` expression and needs nothing else; do it as soon as anyone relies on a
-recurring task arriving at a stated hour.
-
-The schedule is best-effort: GitHub can run it late under load, which is safe
-here. Occurrences are claimed strictly after the last one already turned into a
-task, so a late run catches up and a repeated run creates nothing twice. Any
-scheduler that invokes the script on the same interval works as well — a
-crontab entry, or a Vercel Cron Job hitting a route that calls
-`spawnDueOccurrences`.
+An occurrence becomes a task on the first run after it falls due, so a daily
+schedule can leave a task up to a day later than the time its rule names.
+Increase the frequency by editing the `cron:` expression; nothing else changes.
 
 ## API Documentation
 
