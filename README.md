@@ -157,22 +157,33 @@ double-send. Nothing schedules this yet — the command exists and no scheduler
 calls it.
 
 Recurring tasks need the same treatment, and this one **is** scheduled.
-`.github/workflows/spawn-recurrences.yml` runs hourly and calls
+`.github/workflows/spawn-recurrences.yml` runs every six hours and calls
 
 ```
 pnpm recurrences:spawn
 ```
 
-It reaches the database directly using the `DATABASE_URL` repository secret —
-the same credential the migration job uses — so no public trigger route has to
-exist for a scheduler to reach. The job skips itself when that secret is
-absent; without it, rules are stored and no task is ever created.
+It reaches the database directly using `DATABASE_URL` from the **Production
+environment** — the same credential the migration job uses — so no public
+trigger route has to exist for a scheduler to reach. That secret lives on the
+environment rather than on the repository, so a job must name
+`environment: Production` to receive it; one that does not is handed an empty
+value and skips. The job skips itself when the secret is absent; without it,
+rules are stored and no task is ever created.
+
+The interval is chosen by cost rather than by punctuality. Each run wakes the
+database, which autosuspends when idle, so the bill tracks how often the job
+runs and not how much it does — four runs a day rather than twenty-four is a
+large saving for a job that usually finds nothing due. The price is lateness: a
+rule stating 09:00 local may not appear until up to six hours afterwards. Raise
+the frequency when that trade stops being worth it; nothing else has to change.
 
 The schedule is best-effort: GitHub can run it late under load, which is safe
 here. Occurrences are claimed strictly after the last one already turned into a
 task, so a late run catches up and a repeated run creates nothing twice. Any
-scheduler that invokes the script hourly works as well — a crontab entry, or a
-Vercel Cron Job hitting a route that calls `spawnDueOccurrences`.
+scheduler that invokes the script on the same interval works as well — a
+crontab entry, or a Vercel Cron Job hitting a route that calls
+`spawnDueOccurrences`.
 
 ## API Documentation
 

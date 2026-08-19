@@ -11,9 +11,18 @@ name: Spawn recurring tasks
 
 on:
   schedule:
-    # Hourly. The shortest rule this supports is daily, so an hourly run is
-    # ample; running more often would change nothing.
-    - cron: '0 * * * *'
+    # Every six hours, at 00:00, 06:00, 12:00 and 18:00 UTC.
+    #
+    # The binding cost is the number of wake-ups, not the length of the job:
+    # the database autosuspends when idle, so each run bills a few minutes of
+    # compute whether the work takes twenty seconds or two minutes. Four runs a
+    # day rather than twenty-four cuts that by around 83%.
+    #
+    # What that saves is paid for in punctuality. Rules carry a timezone, so a
+    # rule stating 09:00 local can appear up to six hours after the hour it
+    # names. Raise the frequency when that lateness costs more than the
+    # compute; the job behaves the same however often it runs.
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 # Overlapping runs would be safe — the watermark prevents double-creation —
