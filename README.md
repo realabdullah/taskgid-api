@@ -1,235 +1,95 @@
 # TaskGid API
 
-TaskGid API is a task management application built with Node.js, Express, and PostgreSQL.
+Task management API built with Node.js, Express, Sequelize, and PostgreSQL.
 
 ## Prerequisites
 
-- Node.js (v14 or higher)
-- PostgreSQL database
+- Node.js 20+
+- pnpm
+- PostgreSQL
 
 ## Setup
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/taskgid-api.git
-   cd taskgid-api
-   ```
-
-2. Install dependencies:
-   ```
-   npm install
-   ```
-
-3. Create a `.env` file in the root directory with the following variables:
-   ```
-   # Server
-   PORT=3000
-   NODE_ENV=development
-
-   # Database
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_NAME=taskgid
-   DB_USER=your_username
-   DB_PASSWORD=your_password
-
-   # JWT
-   JWT_SECRET=your_jwt_secret
-   ACCESS_TOKEN_EXPIRY=1h
-
-   # WebAuthn
-   RPNAME=TaskGid
-   RPDOMAIN=localhost
-   RPORIGIN=http://localhost:3000
-
-   # Client URL
-   CLIENT_URL=http://localhost:3000
-
-   # Notification Providers
-   PUSHER_APP_ID=your_app_id
-   PUSHER_KEY=your_key
-   PUSHER_SECRET=your_secret
-   PUSHER_CLUSTER=your_cluster
-   FIREBASE_PROJECT_ID=your_project_id
-   FIREBASE_CLIENT_EMAIL=your_client_email
-   FIREBASE_PRIVATE_KEY=your_private_key
-   KNOCK_API_KEY=your_knock_api_key
-   NOTIFICATION_PROVIDER=pusher
-   ```
-
-4. Create the database:
-   
-   If you have PostgreSQL command-line tools installed:
-   ```
-   createdb taskgid
-   ```
-   
-   Alternatively, you can create the database using psql:
-   ```
-   psql -U postgres
-   CREATE DATABASE taskgid;
-   \q
-   ```
-   
-   Or using a GUI tool like pgAdmin, DBeaver, or TablePlus.
-
-5. Sync the database with the models:
-   ```
-   npm run db:sync
-   ```
-
-## Running the Application
-
-### Development Mode
 ```
-npm run dev
+git clone https://github.com/realabdullah/taskgid-api.git
+cd taskgid-api
+pnpm install
+cp .env.example .env
 ```
 
-### Production Mode
+Fill in `.env`. `DATABASE_URL` wins over the discrete `DB_*` variables when
+both are set (see `src/config/config.cjs`). Every other variable is optional —
+the feature it configures is disabled without it, not broken.
+
+Create the database, then apply migrations:
+
 ```
-npm start
+createdb taskgid
+pnpm db:migrate
+```
+
+## Running
+
+```
+pnpm dev     # development, with reload
+pnpm start   # production
 ```
 
 ## Database schema
 
-Migrations are the source of truth for schema changes and run automatically on
-deploy, before the server starts (see the `CMD` in the Dockerfile). Order
-matters: `sequelize.sync()` creates missing **tables** but never missing
-**columns**, so booting first leaves a new column absent and fails on the first
-query that selects it.
+Migrations in `migrations/` are the source of truth. They run before the
+server starts on deploy (see the `CMD` in `Dockerfile`) — `sequelize.sync()`
+creates missing tables but never missing columns, so booting first would fail
+on the first query against a new one.
 
-Apply migrations by hand with:
 ```
-npm run db:migrate
-```
-
-Migrations are written to be safe against a database that `sync()` built before
-migrations were introduced — see `scripts/migration-helpers.cjs`. They check
-before they add, so the same set applies cleanly to a fresh database and to one
-that already has the objects.
-
-To sync the models directly (development convenience, not a substitute for a
-migration):
-```
-npm run db:sync
+pnpm db:migrate         # apply
+pnpm db:migrate:down     # roll back the last migration
 ```
 
-To force sync (drops all tables and recreates them — destroys data):
-```
-npm run db:sync:force
-```
+`scripts/migration-helpers.cjs` provides `addColumnIfMissing`,
+`createTableIfMissing`, and similar guards; new migrations should use them
+rather than a bare `addColumn`/`createTable`, since this database predates
+migrations and may already have the object.
+
+`pnpm db:sync` / `pnpm db:sync:force` sync models directly for local
+development. `:force` drops and recreates every table.
 
 ## Realtime
 
-Workspace events (`task.created`, `task.updated`, `task.deleted`,
-`comment.created`) are published to Pusher by
-`src/services/workspaceEvents.js`. The persistent connection lives on Pusher, so
-this API only makes a stateless HTTP call — which is what lets realtime work on
-Vercel, where a function cannot hold a stream open.
+`src/services/workspaceEvents.js` publishes `task.created`, `task.updated`,
+`task.deleted`, and `comment.created` to Pusher on the `private-workspace-{id}`
+channel. `POST /api/pusher/auth` authorizes subscriptions against workspace
+membership. Without `PUSHER_*` credentials configured, publishing is a no-op.
 
-Subscription is authorised by `POST /api/pusher/auth` against real workspace
-membership, so a member of one workspace cannot subscribe to another's channel.
-Anything not explicitly recognised is refused.
-
-Without `PUSHER_*` credentials, publishing is a silent no-op and the frontend
-falls back to refetch-on-window-focus. Realtime is an enhancement, never a
-correctness requirement.
-
-`PUSHER_HOST`, `PUSHER_PORT` and `PUSHER_USE_TLS` point the client at any
-Pusher-protocol server — a self-hosted Sockudo or Soketi — without an
-application code change.
+`PUSHER_HOST`, `PUSHER_PORT`, and `PUSHER_USE_TLS` point the client at any
+Pusher-protocol-compatible server instead of Pusher's own.
 
 ## Scheduled jobs
 
-Digest emails are built and gated by user preferences and timezone, but nothing
-sends them until something calls the runner. Schedule it hourly; it works out
-who is due based on each recipient's local time, so an hourly run is enough for
-every timezone:
+| Job | Command | Schedule |
+| --- | --- | --- |
+| Digest emails | `pnpm digests:send` | Not currently scheduled |
+| Recurring task spawner | `pnpm recurrences:spawn` | `.github/workflows/spawn-recurrences.yml`, daily |
 
-```
-0 * * * *  cd /path/to/taskgid-api && npm run digests:send
-```
+Both read due work based on each record's own time zone or watermark, so a
+run that happens late catches up and a run that happens twice is a no-op.
 
-On Vercel this is a Cron Job hitting a route that calls the runner, or any
-external scheduler invoking `pnpm digests:send`. Running it inside the API
-process is deliberately avoided so a restart or a second instance cannot
-double-send. Nothing schedules this yet — the command exists and no scheduler
-calls it.
+The recurrence workflow needs `DATABASE_URL` on the **Production** GitHub
+environment; a job must declare `environment: Production` to receive it.
 
-Recurring tasks are scheduled by `.github/workflows/spawn-recurrences.yml`,
-which runs `pnpm recurrences:spawn` once a day.
+## Notifications
 
-`DATABASE_URL` is held on the **Production** environment, so any job using it
-must set `environment: Production` or it receives an empty value and skips.
+- **In-app / push** — Novu, configured via `NOVU_API_KEY`.
+- **Realtime** — Pusher, see above.
+- **Email** — ZeptoMail first, falling back to Resend, via
+  `ZEPTO_MAIL_TOKEN` / `RESEND_API_KEY`.
 
-An occurrence becomes a task on the first run after it falls due, so a daily
-schedule can leave a task up to a day later than the time its rule names.
-Increase the frequency by editing the `cron:` expression; nothing else changes.
+## API documentation
 
-## Calendar feed
-
-`GET /calendar/:token.ics` serves one user's tasks with a due date as a
-read-only iCalendar feed, subscribable from Google, Outlook, or Apple
-Calendar. The token in the path is the credential — calendar clients cannot
-send an `Authorization` header — so only its SHA-256 hash is stored, the same
-pattern used for password reset tokens.
-
-Manage it while authenticated normally:
-
-- `GET /users/calendar-feed` — `{enabled}`
-- `POST /users/calendar-feed` — generates or rotates the token, returning
-  `{url}`. This is the only response that ever carries the raw token.
-- `DELETE /users/calendar-feed` — revokes it; the existing URL stops working.
-
-`PUBLIC_API_URL` is the origin the feed URL is built from; it falls back to
-`localhost` when unset.
-
-## API Documentation
-
-API documentation is available in OpenAPI format. You can view it in the following ways:
-
-1. See the [openapi.yaml](openapi.yaml) file for the OpenAPI specification
-2. When the server is running, visit `/api-docs` for an interactive documentation interface
-
-## Notification Providers
-
-TaskGid supports multiple notification providers, with one provider active at a time:
-
-### Pusher
-For real-time notifications, configure your Pusher credentials in your .env file:
-```
-PUSHER_APP_ID=your_app_id
-PUSHER_KEY=your_key
-PUSHER_SECRET=your_secret
-PUSHER_CLUSTER=your_cluster
-```
-
-### Firebase Cloud Messaging (FCM)
-For mobile push notifications, configure your Firebase credentials in your .env file:
-```
-FIREBASE_PROJECT_ID=your_project_id
-FIREBASE_CLIENT_EMAIL=your_client_email
-FIREBASE_PRIVATE_KEY=your_private_key
-```
-
-### Knock Labs
-For multi-channel notification orchestration, configure your Knock credentials in your .env file:
-```
-KNOCK_API_KEY=your_knock_api_key
-```
-
-To use Knock Labs:
-1. Create an account at [knock.app](https://knock.app)
-2. Set up workflows in the Knock dashboard for each event type
-3. Configure your .env file with your Knock API key
-4. Set the `NOTIFICATION_PROVIDER` to `knock` to use Knock as the provider
-
-You can set the active notification provider in your .env file:
-```
-# Options: pusher, firebase, knock
-NOTIFICATION_PROVIDER=pusher
-```
+`openapi.yaml` is the OpenAPI specification. With the server running, an
+interactive version is at `/api-docs`.
 
 ## License
 
-ISC 
+ISC

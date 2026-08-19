@@ -44,6 +44,23 @@ The same applies to `README.md` and every other document. State what a thing
 does and the facts a reader cannot infer. Do not restate trade-offs, alternatives
 considered, or the history of a decision.
 
+### README is not a changelog
+
+Shipping a feature is not, by itself, a reason to add a section to `README.md`.
+The README describes the system as it stands today, for someone who was not
+here for any of the work that produced it. Before adding to it, ask: does this
+belong in *reference documentation for the current system* — setup, running,
+architecture, operational facts a contributor needs — or does it belong in the
+PR description, which is where "what shipped and why" is supposed to live?
+
+If it's reference material, it still has to earn a place: point at the source
+of truth (`.env.example`, `openapi.yaml`, a script) instead of duplicating
+values that will drift, and write it so it reads the same whether the feature
+shipped an hour ago or three years ago — no "now supports," no "recently
+added," no explaining the alternative that was rejected. When a new capability
+changes an existing section's meaning, edit that section in place rather than
+appending a new one next to it.
+
 ## 2. Commits and pull requests
 
 Subject line: `(type): lowercase summary`, imperative, describing the change.
