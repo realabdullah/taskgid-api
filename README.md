@@ -166,6 +166,24 @@ An occurrence becomes a task on the first run after it falls due, so a daily
 schedule can leave a task up to a day later than the time its rule names.
 Increase the frequency by editing the `cron:` expression; nothing else changes.
 
+## Calendar feed
+
+`GET /calendar/:token.ics` serves one user's tasks with a due date as a
+read-only iCalendar feed, subscribable from Google, Outlook, or Apple
+Calendar. The token in the path is the credential — calendar clients cannot
+send an `Authorization` header — so only its SHA-256 hash is stored, the same
+pattern used for password reset tokens.
+
+Manage it while authenticated normally:
+
+- `GET /users/calendar-feed` — `{enabled}`
+- `POST /users/calendar-feed` — generates or rotates the token, returning
+  `{url}`. This is the only response that ever carries the raw token.
+- `DELETE /users/calendar-feed` — revokes it; the existing URL stops working.
+
+`PUBLIC_API_URL` is the origin the feed URL is built from; it falls back to
+`localhost` when unset.
+
 ## API Documentation
 
 API documentation is available in OpenAPI format. You can view it in the following ways:

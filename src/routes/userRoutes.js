@@ -1,6 +1,9 @@
 import express from 'express';
 import {updateUserProfile, getUser} from '../controllers/userController.js';
 import {
+    getCalendarFeedStatus, createCalendarFeedToken, revokeCalendarFeedToken,
+} from '../controllers/calendarController.js';
+import {
     generateRegistrationOptionsWithAuthn, verifyAuthnResponse, removeAuthn, fetchSavedAuthns, authLimiter,
 } from '../controllers/authnController.js';
 import authMiddleware from '../middleware/authMiddleware.js';
@@ -16,6 +19,11 @@ router.use(authMiddleware);
 // User profile routes
 router.get('/profile', getUser);
 router.patch('/profile', validateUpdateUserProfile, updateUserProfile);
+
+// Personal calendar feed
+router.get('/calendar-feed', getCalendarFeedStatus);
+router.post('/calendar-feed', createCalendarFeedToken);
+router.delete('/calendar-feed', revokeCalendarFeedToken);
 
 
 // WebAuthn routes with rate limiting
