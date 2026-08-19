@@ -77,9 +77,7 @@ export const getWorkspaceStatistics = async (req, res) => {
             return errorResponse(res, 403, 'Access denied');
         }
 
-        // Every figure below counts top-level work only, so the numbers stay
-        // comparable with what this endpoint reported before subtasks existed.
-        // Subtask progress is reported separately, as `subtasks`.
+        // Top-level only; subtasks are reported separately below.
         const totalTasksResult = await Task.count({
             where: {workspaceId, ...TOP_LEVEL_ONLY},
         });
@@ -191,9 +189,6 @@ export const getWorkspaceStatistics = async (req, res) => {
             ],
         });
 
-        // Reported on its own rather than folded into the figures above: every
-        // headline number stays on the same basis it had before subtasks
-        // existed, and subtask progress is still visible.
         const subtaskTotal = await Task.count({
             where: {workspaceId, ...SUBTASKS_ONLY},
         });

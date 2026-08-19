@@ -1043,9 +1043,8 @@ export const getUserTasks = async (req, res) => {
     if (!isMember)
       return errorResponse(res, 404, "User is not a member of this workspace");
 
-    // Filtering to one member cuts across the hierarchy on purpose: a subtask
-    // assigned to someone is their work and has to reach them. `parentId` goes
-    // out with the row so the client can mark it as nested.
+    // A member filter crosses the hierarchy; `parentId` ships so the client
+    // can mark nested rows.
     const { count, rows: tasks } = await Task.findAndCountAll({
       attributes: ["id", "title", "dueDate", "priority", "status", "parentId"],
       where: {

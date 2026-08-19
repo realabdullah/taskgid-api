@@ -12,13 +12,8 @@ import {logTaskActivity, logWorkspaceActivity} from '../utils/activityLogger.js'
 // exports are not reachable directly.
 const {rrulestr} = pkg;
 
-/*
- * A single run will not create more than this many tasks for one rule. A rule
- * left dormant for a year would otherwise wake up and write hundreds of rows in
- * one transaction. Hitting the cap is not data loss: `lastSpawnedAt` advances
- * only as far as the last task actually created, so the next run continues from
- * there.
- */
+// Per rule, per run. Hitting the cap is not data loss — `lastSpawnedAt`
+// advances only to the last task created, so the next run continues.
 export const MAX_SPAWNS_PER_RUN = 50;
 
 /**
@@ -163,11 +158,7 @@ export const spawnDueOccurrences = async (now = new Date()) => {
 
         if (occurrences.length === 0) continue;
 
-        /*
-         * One transaction per rule. A rule that fails halfway leaves no partial
-         * instances and no advanced watermark, so the next run retries it
-         * cleanly; rules that already succeeded keep their work.
-         */
+        // One transaction per rule, so a partial failure retries cleanly.
         const transaction = await sequelize.transaction();
         const spawned = [];
         try {
@@ -188,12 +179,8 @@ export const spawnDueOccurrences = async (now = new Date()) => {
             continue;
         }
 
-        /*
-         * Logged after the commit, not inside it: the activity loggers take no
-         * transaction, so writing them alongside uncommitted tasks would break
-         * their foreign key. Both swallow their own errors, so a failure here
-         * costs a history entry rather than the task it describes.
-         */
+        // After the commit: the activity loggers take no transaction and
+        // would break their foreign key against uncommitted tasks.
         for (const task of spawned) {
             await logTaskActivity(task.id, recurrence.createdById, 'created', {
                 taskTitle: task.title,

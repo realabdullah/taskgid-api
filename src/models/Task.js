@@ -61,33 +61,21 @@ Task.init(
             allowNull: true,
         },
         startDate: {
-            // When work is meant to begin. Paired with dueDate it gives a task a
-            // span rather than a single deadline, which any timeline view needs.
             type: DataTypes.DATE,
             allowNull: true,
         },
         estimateMinutes: {
-            // Stored in minutes so the API never has to guess what "2" means.
             type: DataTypes.INTEGER,
             allowNull: true,
         },
         checklist: {
-            /*
-             * An ordered list of {id, text, done} items, held on the task rather
-             * than in their own table. Checklist items are never queried,
-             * filtered or reported on independently — they are read and written
-             * with their task — so a column avoids a join and a migration per
-             * change of shape. Subtasks, which do need identity of their own,
-             * are a separate concern.
-             */
+            // Ordered {id, text, done} items.
             type: DataTypes.JSONB,
             allowNull: false,
             defaultValue: [],
         },
         recurrenceId: {
-            // The schedule that produced this task, if any. Nulled rather than
-            // cascaded when a rule is deleted: ending a schedule does not
-            // retract the work already done under it.
+            // Nulled, not cascaded, when the rule is deleted.
             type: DataTypes.UUID,
             allowNull: true,
             references: {
@@ -96,19 +84,11 @@ Task.init(
             },
         },
         occurrenceDate: {
-            // Which occurrence of that schedule this task is, so a completed
-            // instance stays attributable to its period.
             type: DataTypes.DATE,
             allowNull: true,
         },
         parentId: {
-            /*
-             * The task this one is a subtask of; NULL means top-level. A
-             * subtask has its own assignee, due date and tags — that is what
-             * separates it from a checklist item. Completion does not cascade
-             * in either direction: a parent reports its children's progress
-             * rather than enforcing it.
-             */
+            // NULL means top-level. Completion never cascades either way.
             type: DataTypes.UUID,
             allowNull: true,
             references: {
