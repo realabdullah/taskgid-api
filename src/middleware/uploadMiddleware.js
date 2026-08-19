@@ -49,6 +49,7 @@ const fileFilter = (req, file, cb) => {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'text/plain',
         'text/csv',
+        'application/json',
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
