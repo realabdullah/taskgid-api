@@ -63,16 +63,15 @@ export const uploadTaskAttachment = async (req, res) => {
 
         // 3. Create Attachment record in DB
         const attachment = await Attachment.create({
-            filename: uploadedFile.path, // Or key, depending on provider
+            filename: uploadedFile.id,
             originalname: uploadedFile.filename,
             mimetype: uploadedFile.mimetype,
             size: uploadedFile.size,
-            path: uploadedFile.id, // Store the path/key for deletion
+            path: uploadedFile.id,
             url: uploadedFile.url,
-            storageType: 'R2',
             userId: userId,
-            taskId: taskId, // Link to task
-            commentId: null, // Explicitly null for task attachments
+            taskId: taskId,
+            commentId: null,
         });
 
         res.status(201).json({success: true, attachment});
@@ -133,16 +132,15 @@ export const uploadCommentAttachment = async (req, res) => {
 
         // 3. Create Attachment record
         const attachment = await Attachment.create({
-            filename: uploadedFile.path,
+            filename: uploadedFile.id,
             originalname: uploadedFile.filename,
             mimetype: uploadedFile.mimetype,
             size: uploadedFile.size,
             path: uploadedFile.id,
             url: uploadedFile.url,
-            storageType: 'R2',
             userId: userId,
-            taskId: null, // Explicitly null for comment attachments
-            commentId: commentId, // Link to comment
+            taskId: null,
+            commentId: commentId,
         });
 
         res.status(201).json({success: true, attachment});
