@@ -46,6 +46,9 @@ jobs:
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    # `DATABASE_URL` lives on this environment rather than on the repository.
+    # Without naming it the secret arrives empty and every run has skipped.
+    environment: Production
 
     steps:
       - uses: actions/checkout@v4

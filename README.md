@@ -151,9 +151,20 @@ every timezone:
 ```
 
 On Vercel this is a Cron Job hitting a route that calls the runner, or any
-external scheduler invoking `npm run digests:send`. Running it inside the API
+external scheduler invoking `pnpm digests:send`. Running it inside the API
 process is deliberately avoided so a restart or a second instance cannot
-double-send.
+double-send. Nothing schedules this yet — the command exists and no scheduler
+calls it.
+
+Recurring tasks are scheduled by `.github/workflows/spawn-recurrences.yml`,
+which runs `pnpm recurrences:spawn` once a day.
+
+`DATABASE_URL` is held on the **Production** environment, so any job using it
+must set `environment: Production` or it receives an empty value and skips.
+
+An occurrence becomes a task on the first run after it falls due, so a daily
+schedule can leave a task up to a day later than the time its rule names.
+Increase the frequency by editing the `cron:` expression; nothing else changes.
 
 ## API Documentation
 
