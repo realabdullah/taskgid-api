@@ -80,7 +80,15 @@ Never:
 
 - credit Claude or any agent (`Co-Authored-By`, "Generated with…" footers);
 - reference internal conversations, plans, phase numbers, or session history;
-- describe what you intend to do next.
+- describe what you intend to do next;
+- narrate the work of producing the change — what was checked with someone,
+  what was verified before shipping, what was "flagged rather than decided
+  quietly." A PR body describes the change and its behavior in third person,
+  as if it had always been this way, the same as a README. "I checked with
+  you first" and "verified this works" are process notes, not description —
+  say what was tested and what it showed instead ("exercised against a
+  running instance: a created task delivered with a signature that
+  recomputes correctly"), without the first person.
 
 Branch from the default branch (`master` in `taskgid`, `main` in `taskgid-api`)
 and name branches `feat/…`, `fix/…`, or `chore/…`. One concern per pull request.
