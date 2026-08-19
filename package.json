@@ -14,6 +14,7 @@
     "db:migrate": "node scripts/run-migrations.js",
     "digests:send": "node scripts/send-digests.js",
     "recurrences:spawn": "node scripts/spawn-recurrences.js",
+    "webhooks:retry": "node scripts/retry-webhook-deliveries.js",
     "db:migrate:down": "node scripts/run-migrations.js --down",
     "docs:generate": "node scripts/swagger.js"
   },

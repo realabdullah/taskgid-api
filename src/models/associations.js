@@ -18,6 +18,9 @@ import TaskTag from './TaskTag.js';
 import NotificationPreference from './NotificationPreference.js';
 import TaskRead from './TaskRead.js';
 import TaskRecurrence from './TaskRecurrence.js';
+import WorkspaceEvent from './WorkspaceEvent.js';
+import WebhookEndpoint from './WebhookEndpoint.js';
+import WebhookDelivery from './WebhookDelivery.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -113,6 +116,22 @@ TaskRead.belongsTo(Task, {foreignKey: 'taskId', as: 'task'});
 NotificationPreference.belongsTo(User, {foreignKey: 'userId', as: 'user'});
 NotificationPreference.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
 User.hasMany(NotificationPreference, {foreignKey: 'userId', as: 'notificationPreferences'});
+
+// WorkspaceEvent associations
+WorkspaceEvent.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+WorkspaceEvent.belongsTo(User, {foreignKey: 'actorId', as: 'actor'});
+Workspace.hasMany(WorkspaceEvent, {foreignKey: 'workspaceId', as: 'events'});
+
+// WebhookEndpoint associations
+WebhookEndpoint.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+WebhookEndpoint.belongsTo(User, {foreignKey: 'createdById', as: 'creator'});
+Workspace.hasMany(WebhookEndpoint, {foreignKey: 'workspaceId', as: 'webhookEndpoints'});
+
+// WebhookDelivery associations
+WebhookDelivery.belongsTo(WebhookEndpoint, {foreignKey: 'webhookEndpointId', as: 'endpoint'});
+WebhookDelivery.belongsTo(WorkspaceEvent, {foreignKey: 'workspaceEventId', as: 'event'});
+WebhookEndpoint.hasMany(WebhookDelivery, {foreignKey: 'webhookEndpointId', as: 'deliveries'});
+WorkspaceEvent.hasMany(WebhookDelivery, {foreignKey: 'workspaceEventId', as: 'deliveries'});
 
 /**
  * Sets up all model associations

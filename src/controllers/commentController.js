@@ -19,6 +19,11 @@ import {
   emitWorkspaceEvent,
   WORKSPACE_EVENTS,
 } from "../services/workspaceEvents.js";
+import {
+  persistWorkspaceEvent,
+  queueDeliveriesForEvent,
+  dispatchQueuedDeliveries,
+} from "../services/webhookService.js";
 
 /**
  * Marks which of the given comments the requesting user has already liked, so a
@@ -331,6 +336,17 @@ export const addTaskComment = async (req, res) => {
       );
     }
 
+    const event = await persistWorkspaceEvent(
+      {
+        workspaceId: task.workspaceId,
+        type: WORKSPACE_EVENTS.COMMENT_CREATED,
+        actorId: userId,
+        payload: { taskId: task.id, commentId: populatedComment.id },
+      },
+      { transaction: t },
+    );
+    const webhookDeliveries = await queueDeliveriesForEvent(event, { transaction: t });
+
     await t.commit();
     await emitWorkspaceEvent({
       workspaceId: task.workspaceId,
@@ -338,6 +354,7 @@ export const addTaskComment = async (req, res) => {
       actorId: userId,
       payload: { taskId: task.id, commentId: populatedComment.id },
     });
+    await dispatchQueuedDeliveries(webhookDeliveries);
     return res.status(201).json({
       success: true,
       data: populatedComment.toJSON(),
