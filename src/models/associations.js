@@ -21,6 +21,7 @@ import TaskRecurrence from './TaskRecurrence.js';
 import WorkspaceEvent from './WorkspaceEvent.js';
 import WebhookEndpoint from './WebhookEndpoint.js';
 import WebhookDelivery from './WebhookDelivery.js';
+import ApiKey from './ApiKey.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -132,6 +133,11 @@ WebhookDelivery.belongsTo(WebhookEndpoint, {foreignKey: 'webhookEndpointId', as:
 WebhookDelivery.belongsTo(WorkspaceEvent, {foreignKey: 'workspaceEventId', as: 'event'});
 WebhookEndpoint.hasMany(WebhookDelivery, {foreignKey: 'webhookEndpointId', as: 'deliveries'});
 WorkspaceEvent.hasMany(WebhookDelivery, {foreignKey: 'workspaceEventId', as: 'deliveries'});
+
+// ApiKey associations
+ApiKey.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+ApiKey.belongsTo(User, {foreignKey: 'userId', as: 'owner'});
+Workspace.hasMany(ApiKey, {foreignKey: 'workspaceId', as: 'apiKeys'});
 
 /**
  * Sets up all model associations

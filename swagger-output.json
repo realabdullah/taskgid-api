@@ -2,13 +2,23 @@
   "openapi": "3.0.0",
   "info": {
     "title": "TaskGid API",
-    "description": "Auto-generated API documentation for TaskGid - Task Management Application",
-    "version": "1.0.0"
+    "description": "API documentation for TaskGid - Task Management Application\nFeatures include:\n- Task management with assignments and status tracking\n- Workspace and team collaboration\n- Comments and file attachments\n- Activity logging and notifications\n- User authentication and profile management\n",
+    "version": "1.0.0",
+    "contact": {
+      "name": "realabdullah"
+    },
+    "license": {
+      "name": "ISC"
+    }
   },
   "servers": [
     {
-      "url": "http://localhost:3001",
-      "description": "Current Environment"
+      "url": "http://localhost:8000",
+      "description": "Development server"
+    },
+    {
+      "url": "https://tasks-api.abdspace.xyz",
+      "description": "Production server"
     }
   ],
   "paths": {
@@ -18,6 +28,9 @@
         "responses": {
           "400": {
             "description": "Bad Request"
+          },
+          "403": {
+            "description": "Forbidden"
           }
         },
         "requestBody": {
@@ -259,6 +272,32 @@
         }
       }
     },
+    "/users/calendar-feed": {
+      "get": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "delete": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/users/authn/options": {
       "get": {
         "description": "",
@@ -359,6 +398,29 @@
           "400": {
             "description": "Bad Request"
           }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
+                  "logo": {
+                    "example": "any"
+                  },
+                  "slug": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -381,9 +443,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -408,9 +467,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -419,7 +475,16 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "title": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
                   "slug": {
+                    "example": "any"
+                  },
+                  "logo": {
                     "example": "any"
                   }
                 }
@@ -446,9 +511,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -469,9 +531,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -492,9 +551,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -518,9 +574,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -542,9 +595,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -579,9 +629,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -602,9 +649,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -636,9 +680,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -667,9 +708,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -698,9 +736,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -732,9 +767,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -761,9 +793,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -836,9 +865,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -880,9 +906,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -901,9 +924,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -952,9 +972,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -981,9 +998,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -1030,9 +1044,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1061,9 +1072,277 @@
         "responses": {
           "403": {
             "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/webhooks/": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
+                  "eventTypes": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/webhooks/{id}": {
+      "patch": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "404": {
-            "description": "Not Found"
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
+                  "eventTypes": {
+                    "example": "any"
+                  },
+                  "isActive": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/webhooks/{id}/rotate-secret": {
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/webhooks/{id}/deliveries": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/api-keys/": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/api-keys/{id}": {
+      "delete": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
           }
         }
       }
@@ -1114,14 +1393,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "parentId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -1143,9 +1426,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -1160,6 +1440,9 @@
                   "description": {
                     "example": "any"
                   },
+                  "checklist": {
+                    "example": "any"
+                  },
                   "status": {
                     "example": "any"
                   },
@@ -1169,10 +1452,19 @@
                   "dueDate": {
                     "example": "any"
                   },
+                  "startDate": {
+                    "example": "any"
+                  },
+                  "estimateMinutes": {
+                    "example": "any"
+                  },
                   "assignees": {
                     "example": "any"
                   },
                   "tags": {
+                    "example": "any"
+                  },
+                  "parentId": {
                     "example": "any"
                   }
                 }
@@ -1210,6 +1502,13 @@
           },
           {
             "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parentId",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1289,9 +1588,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1395,9 +1691,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1505,9 +1798,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1536,9 +1826,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       },
@@ -1568,9 +1855,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -1583,6 +1867,12 @@
                     "example": "any"
                   },
                   "tags": {
+                    "example": "any"
+                  },
+                  "parentId": {
+                    "example": "any"
+                  },
+                  "checklist": {
                     "example": "any"
                   }
                 }
@@ -1614,9 +1904,6 @@
         "responses": {
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1648,9 +1935,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -1674,9 +1958,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           }
         },
         "requestBody": {
@@ -1725,9 +2006,6 @@
           },
           "403": {
             "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
           },
           "500": {
             "description": "Internal Server Error"
@@ -1786,6 +2064,43 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/tasks/{id}/read": {
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         }
       }
@@ -2102,9 +2417,213 @@
           },
           "403": {
             "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/recurrences/": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "example": "any"
+                  },
+                  "checklist": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
+                  "rrule": {
+                    "example": "any"
+                  },
+                  "timezone": {
+                    "example": "any"
+                  },
+                  "priority": {
+                    "example": "any"
+                  },
+                  "estimateMinutes": {
+                    "example": "any"
+                  },
+                  "assignees": {
+                    "example": "any"
+                  },
+                  "tags": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceSlug}/recurrences/{recurrenceId}": {
+      "patch": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "404": {
-            "description": "Not Found"
+          {
+            "name": "recurrenceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rrule": {
+                    "example": "any"
+                  },
+                  "title": {
+                    "example": "any"
+                  },
+                  "description": {
+                    "example": "any"
+                  },
+                  "checklist": {
+                    "example": "any"
+                  },
+                  "assignees": {
+                    "example": "any"
+                  },
+                  "tags": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recurrenceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/invite/accept": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invite/decline": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2134,9 +2653,6 @@
           },
           "404": {
             "description": "Not Found"
-          },
-          "500": {
-            "description": "Internal Server Error"
           }
         },
         "requestBody": {
@@ -2158,12 +2674,12 @@
         }
       }
     },
-    "/invite/accept": {
+    "/invite/bulk": {
       "post": {
         "description": "",
         "responses": {
-          "default": {
-            "description": ""
+          "207": {
+            "description": "Multi-Status"
           }
         },
         "requestBody": {
@@ -2172,7 +2688,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "token": {
+                  "emails": {
+                    "example": "any"
+                  },
+                  "workspaceId": {
                     "example": "any"
                   }
                 }
@@ -2182,10 +2701,41 @@
         }
       }
     },
-    "/attachments/tasks/{taskId}/attachments": {
+    "/calendar/{token.ics}": {
+      "get": {
+        "description": "",
+        "produces": [
+          "text/calendar; charset=utf-8"
+        ],
+        "parameters": [
+          {
+            "name": "token.ics",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/attachments/workspaces/{workspaceSlug}/tasks/{taskId}/attachments": {
       "get": {
         "description": "",
         "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "taskId",
             "in": "path",
@@ -2200,34 +2750,12 @@
             "description": "OK"
           }
         }
-      }
-    },
-    "/attachments/comments/{commentId}/attachments": {
-      "get": {
-        "description": "",
-        "parameters": [
-          {
-            "name": "commentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/attachments/workspaces/{id}/tasks/{taskId}/attachments": {
+      },
       "post": {
         "description": "",
         "parameters": [
           {
-            "name": "id",
+            "name": "workspaceSlug",
             "in": "path",
             "required": true,
             "schema": {
@@ -2250,12 +2778,38 @@
         }
       }
     },
-    "/attachments/workspaces/{id}/comments/{commentId}/attachments": {
+    "/attachments/workspaces/{workspaceSlug}/comments/{commentId}/attachments": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "description": "",
         "parameters": [
           {
-            "name": "id",
+            "name": "workspaceSlug",
             "in": "path",
             "required": true,
             "schema": {
@@ -2313,6 +2867,9 @@
           },
           "500": {
             "description": "Internal Server Error"
+          },
+          "503": {
+            "description": "Service Unavailable"
           }
         },
         "requestBody": {
@@ -2330,6 +2887,53 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/notifications/preferences": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/notifications/preferences/{workspaceSlug}": {
+      "delete": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "workspaceSlug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
           }
         }
       }
@@ -2473,6 +3077,26 @@
           }
         }
       }
+    },
+    "/media/upload": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/media/bulk-upload": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2480,7 +3104,13 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
+        "description": "A session token, issued at login and expiring after 7 days."
+      },
+      "apiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A workspace-scoped key (prefixed `tg_key_`), created at\nPOST /workspaces/{workspaceSlug}/api-keys. Authenticates as its issuing\nuser, with that user's role, but only within the workspace it was\ncreated in.\n"
       }
     },
     "parameters": {
