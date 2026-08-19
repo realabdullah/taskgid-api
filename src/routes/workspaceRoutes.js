@@ -29,6 +29,7 @@ import {
 } from '../middleware/workspaceMiddleware.js';
 import tagRoutes from './tagRoutes.js';
 import webhookRoutes from './webhookRoutes.js';
+import apiKeyRoutes from './apiKeyRoutes.js';
 
 const router = new express.Router();
 
@@ -54,6 +55,9 @@ router.use('/:workspaceSlug/tags', checkMemberMiddleware, tagRoutes);
 
 // --- Webhook Management (by Workspace Slug) ---
 router.use('/:workspaceSlug/webhooks', checkAdminMiddleware, webhookRoutes);
+
+// --- API Key Management (by Workspace Slug) ---
+router.use('/:workspaceSlug/api-keys', checkMemberMiddleware, apiKeyRoutes);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', checkMemberMiddleware, getWorkspaceTeam);

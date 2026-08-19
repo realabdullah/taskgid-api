@@ -20,17 +20,13 @@ if (fs.existsSync(openapiPath)) {
 
 const doc = {
   openapi: "3.0.0",
-  info: {
+  info: existingSpec.info || {
     title: "TaskGid API",
-    description:
-      "Auto-generated API documentation for TaskGid - Task Management Application",
+    description: "API documentation for TaskGid - Task Management Application",
     version: "1.0.0",
   },
-  servers: [
-    {
-      url: process.env.FRONTEND_URL || "http://localhost:3001",
-      description: "Current Environment",
-    },
+  servers: existingSpec.servers || [
+    {url: `http://localhost:${process.env.PORT || 3000}`, description: "Development server"},
   ],
   components: existingSpec.components || {
     securitySchemes: {

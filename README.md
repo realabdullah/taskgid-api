@@ -119,6 +119,21 @@ stored. Manage it while authenticated:
 
 `PUBLIC_API_URL` sets the origin used to build the feed URL.
 
+## API keys
+
+A key authenticates as its issuer, with that user's role, but only within the
+one workspace it was created in — a key for workspace A is rejected against
+workspace B even if the same user belongs to both. Send it the same way as a
+session token: `Authorization: Bearer tg_key_...`.
+
+Managed at `/workspaces/:workspaceSlug/api-keys`, by any member for
+themselves:
+
+- `GET /` — an admin or the creator sees every key; anyone else sees only
+  their own
+- `POST /` — create; response carries the raw key once
+- `DELETE /:id` — revoke; the owner or a workspace admin can revoke any key
+
 ## Notifications
 
 - **In-app / push** — Novu, configured via `NOVU_API_KEY`.
@@ -128,8 +143,12 @@ stored. Manage it while authenticated:
 
 ## API documentation
 
-`openapi.yaml` is the OpenAPI specification. With the server running, an
-interactive version is at `/api-docs`.
+`/api-docs` serves `swagger-output.json`, generated from the actual routes by
+`pnpm docs:generate`. `openapi.yaml` holds the shared schemas, parameters, and
+security schemes the generator reuses — including `apiKeyAuth`, for
+authenticating as a workspace-scoped API key instead of a session — and does
+not itself list every path. Run `pnpm docs:generate` after adding or changing
+a route, and commit the result.
 
 ## License
 
