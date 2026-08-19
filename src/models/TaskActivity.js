@@ -42,6 +42,12 @@ const TaskActivity = sequelize.define('TaskActivity', {
         ),
         allowNull: false,
     },
+    source: {
+        // eslint-disable-next-line new-cap
+        type: DataTypes.ENUM('user', 'agent'),
+        allowNull: false,
+        defaultValue: 'user',
+    },
     details: {
         type: DataTypes.JSONB,
         allowNull: true,

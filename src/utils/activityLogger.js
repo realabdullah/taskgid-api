@@ -1,5 +1,16 @@
+import {AsyncLocalStorage} from 'async_hooks';
 import WorkspaceActivity from '../models/WorkspaceActivity.js';
 import TaskActivity from '../models/TaskActivity.js';
+
+/** Carries the actor kind for nested activity writes without threading it through every call. */
+const activitySourceStore = new AsyncLocalStorage();
+
+/**
+ * Runs `fn` so every `logTaskActivity` call inside records `source: 'agent'`.
+ * @param {Function} fn - Async work whose task activities should be tagged as agent.
+ * @return {Promise<*>} Whatever `fn` resolves to.
+ */
+export const runAsAgent = (fn) => activitySourceStore.run('agent', fn);
 
 /**
  * Log an activity in a workspace
@@ -33,10 +44,12 @@ export const logWorkspaceActivity = async (workspaceId, userId, action, details 
  */
 export const logTaskActivity = async (taskId, userId, action, details = {}) => {
     try {
+        const source = activitySourceStore.getStore() === 'agent' ? 'agent' : 'user';
         return await TaskActivity.create({
             taskId,
             userId,
             action,
+            source,
             details,
         });
     } catch (error) {

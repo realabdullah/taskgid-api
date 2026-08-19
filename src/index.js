@@ -23,6 +23,7 @@ import recurrenceRoutes from './routes/recurrenceRoutes.js';
 import pusherRoutes from './routes/pusherRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
+import mcpRoutes from './routes/mcpRoutes.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -94,6 +95,7 @@ app.use('/attachments', attachmentRoutes);
 app.use('/api/pusher', pusherRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/media', mediaRoutes);
+app.use('/mcp', mcpRoutes);
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
