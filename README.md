@@ -157,7 +157,7 @@ double-send. Nothing schedules this yet — the command exists and no scheduler
 calls it.
 
 Recurring tasks need the same treatment, and this one **is** scheduled.
-`.github/workflows/spawn-recurrences.yml` runs every six hours and calls
+`.github/workflows/spawn-recurrences.yml` runs once a day and calls
 
 ```
 pnpm recurrences:spawn
@@ -173,10 +173,15 @@ rules are stored and no task is ever created.
 
 The interval is chosen by cost rather than by punctuality. Each run wakes the
 database, which autosuspends when idle, so the bill tracks how often the job
-runs and not how much it does — four runs a day rather than twenty-four is a
-large saving for a job that usually finds nothing due. The price is lateness: a
-rule stating 09:00 local may not appear until up to six hours afterwards. Raise
-the frequency when that trade stops being worth it; nothing else has to change.
+runs and not how much it does — a run that finds nothing due costs the same as
+one that creates work. Once a day is the floor for a schedule that still runs
+unattended.
+
+The price is lateness. An occurrence is created by the first run *after* it
+falls due, so a task can appear up to a day after the time its rule names, and
+half a day later on average. Raising the frequency is a one-line change to the
+`cron:` expression and needs nothing else; do it as soon as anyone relies on a
+recurring task arriving at a stated hour.
 
 The schedule is best-effort: GitHub can run it late under load, which is safe
 here. Occurrences are claimed strictly after the last one already turned into a

@@ -11,18 +11,23 @@ name: Spawn recurring tasks
 
 on:
   schedule:
-    # Every six hours, at 00:00, 06:00, 12:00 and 18:00 UTC.
+    # Once a day, at 05:17 UTC.
     #
     # The binding cost is the number of wake-ups, not the length of the job:
     # the database autosuspends when idle, so each run bills a few minutes of
-    # compute whether the work takes twenty seconds or two minutes. Four runs a
-    # day rather than twenty-four cuts that by around 83%.
+    # compute whether it finds work or not. One run a day is the floor for a
+    # schedule that still runs unattended.
     #
-    # What that saves is paid for in punctuality. Rules carry a timezone, so a
-    # rule stating 09:00 local can appear up to six hours after the hour it
-    # names. Raise the frequency when that lateness costs more than the
-    # compute; the job behaves the same however often it runs.
-    - cron: '0 */6 * * *'
+    # An occurrence is created by the first run *after* it falls due, so at
+    # this interval a task can appear up to a day after the time its rule
+    # names, and half a day later on average. Choosing the hour moves which
+    # rules are worst affected rather than reducing the delay: 05:17 UTC puts
+    # anything that fell due yesterday in place before the working day starts
+    # across West Africa and Europe.
+    #
+    # Deliberately off the hour. Scheduled jobs across GitHub bunch at :00 and
+    # get queued behind each other.
+    - cron: '17 5 * * *'
   workflow_dispatch:
 
 # Overlapping runs would be safe — the watermark prevents double-creation —
