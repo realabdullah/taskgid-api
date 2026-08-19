@@ -22,6 +22,7 @@ import WorkspaceEvent from './WorkspaceEvent.js';
 import WebhookEndpoint from './WebhookEndpoint.js';
 import WebhookDelivery from './WebhookDelivery.js';
 import ApiKey from './ApiKey.js';
+import SlackInstallation from './SlackInstallation.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -138,6 +139,11 @@ WorkspaceEvent.hasMany(WebhookDelivery, {foreignKey: 'workspaceEventId', as: 'de
 ApiKey.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
 ApiKey.belongsTo(User, {foreignKey: 'userId', as: 'owner'});
 Workspace.hasMany(ApiKey, {foreignKey: 'workspaceId', as: 'apiKeys'});
+
+// SlackInstallation associations
+SlackInstallation.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+SlackInstallation.belongsTo(User, {foreignKey: 'installedById', as: 'installer'});
+Workspace.hasOne(SlackInstallation, {foreignKey: 'workspaceId', as: 'slackInstallation'});
 
 /**
  * Sets up all model associations

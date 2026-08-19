@@ -514,3 +514,25 @@ export const validateWebhookEndpointUpdate = [
     webhookIsActiveRule,
     reportValidationErrors,
 ];
+
+/**
+ * Validates a Slack installation update. Every field is optional.
+ * @return {Array} Express-validator chain plus the error-reporting handler.
+ */
+export const validateSlackInstallationUpdate = [
+    body('channelId')
+        .optional({nullable: true})
+        .custom((value) => value === null || value === '' || (typeof value === 'string' && value.length > 0))
+        .withMessage('channelId must be a string or null'),
+    body('eventTypes')
+        .optional()
+        .isArray({min: 1})
+        .withMessage('eventTypes must be a non-empty array')
+        .custom((value) => value.every((type) => VALID_WEBHOOK_EVENT_TYPES.includes(type)))
+        .withMessage(`eventTypes must be one of: ${VALID_WEBHOOK_EVENT_TYPES.join(', ')}`),
+    body('isActive')
+        .optional()
+        .isBoolean()
+        .withMessage('isActive must be a boolean'),
+    reportValidationErrors,
+];

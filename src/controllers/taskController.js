@@ -25,6 +25,7 @@ import {
   queueDeliveriesForEvent,
   dispatchQueuedDeliveries,
 } from "../services/webhookService.js";
+import { notifySlackForEvent } from "../services/slackService.js";
 import {
   createPaginatedResponse,
   getPaginationParams,
@@ -351,13 +352,15 @@ export const addTask = async (req, res) => {
       },
     });
 
-    await emitWorkspaceEvent({
+    const createdEvent = {
       workspaceId: populatedTask.workspaceId,
       type: WORKSPACE_EVENTS.TASK_CREATED,
       actorId: req.user?.id,
-      payload: { taskId: populatedTask.id },
-    });
+      payload: { taskId: populatedTask.id, taskTitle: populatedTask.title },
+    };
+    await emitWorkspaceEvent(createdEvent);
     await dispatchQueuedDeliveries(webhookDeliveries);
+    await notifySlackForEvent(createdEvent);
     return successResponse(res, { data: populatedTask.toJSON() }, 201);
   } catch (error) {
     console.error("Add Task Error:", error);
@@ -743,13 +746,19 @@ export const updateTask = async (req, res) => {
       },
     });
 
-    await emitWorkspaceEvent({
+    const updatedEvent = {
       workspaceId: updatedTask.workspaceId,
       type: WORKSPACE_EVENTS.TASK_UPDATED,
       actorId: req.user?.id,
-      payload: { taskId: updatedTask.id, status: updatedTask.status },
-    });
+      payload: {
+        taskId: updatedTask.id,
+        taskTitle: updatedTask.title,
+        status: updatedTask.status,
+      },
+    };
+    await emitWorkspaceEvent(updatedEvent);
     await dispatchQueuedDeliveries(webhookDeliveries);
+    await notifySlackForEvent(updatedEvent);
     return successResponse(res, { data: updatedTask.toJSON() });
   } catch (error) {
     console.error("Update Task Error:", error);
@@ -886,7 +895,7 @@ export const deleteTask = async (req, res) => {
           workspaceId,
           type: WORKSPACE_EVENTS.TASK_DELETED,
           actorId: req.user?.id,
-          payload: { taskId: meta.taskId },
+          payload: { taskId: meta.taskId, taskTitle: meta.taskTitle },
         },
         { transaction: t },
       );
@@ -895,13 +904,15 @@ export const deleteTask = async (req, res) => {
 
     await logWorkspaceActivity(workspaceId, req.user.id, "task_deleted", meta);
 
-    await emitWorkspaceEvent({
+    const deletedEvent = {
       workspaceId,
       type: WORKSPACE_EVENTS.TASK_DELETED,
       actorId: req.user?.id,
-      payload: { taskId: meta.taskId },
-    });
+      payload: { taskId: meta.taskId, taskTitle: meta.taskTitle },
+    };
+    await emitWorkspaceEvent(deletedEvent);
     await dispatchQueuedDeliveries(webhookDeliveries);
+    await notifySlackForEvent(deletedEvent);
     return successResponse(res, { message: "Task deleted successfully" });
   } catch (error) {
     console.error("Delete Task Error:", error);

@@ -23,6 +23,7 @@ import recurrenceRoutes from './routes/recurrenceRoutes.js';
 import pusherRoutes from './routes/pusherRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
+import slackRoutes from './routes/slackRoutes.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -33,9 +34,14 @@ const port = process.env.PORT || 3000;
 // Trust proxy for Vercel/proxied environments
 app.set('trust proxy', 1);
 
+// Capture the exact body bytes Slack signed, before any parser mutates them.
+const captureRawBody = (req, _res, buf) => {
+    if (buf?.length) req.rawBody = buf.toString('utf8');
+};
+
 // Body parser middleware
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: true}));
+app.use(bodyParser.json({verify: captureRawBody}));
+app.use(bodyParser.urlencoded({extended: true, verify: captureRawBody}));
 
 // CORS middleware
 const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost:3000'];
@@ -94,6 +100,7 @@ app.use('/attachments', attachmentRoutes);
 app.use('/api/pusher', pusherRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/media', mediaRoutes);
+app.use('/slack', slackRoutes);
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {

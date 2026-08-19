@@ -30,6 +30,7 @@ import {
 import tagRoutes from './tagRoutes.js';
 import webhookRoutes from './webhookRoutes.js';
 import apiKeyRoutes from './apiKeyRoutes.js';
+import {slackWorkspaceRoutes} from './slackRoutes.js';
 
 const router = new express.Router();
 
@@ -58,6 +59,9 @@ router.use('/:workspaceSlug/webhooks', checkAdminMiddleware, webhookRoutes);
 
 // --- API Key Management (by Workspace Slug) ---
 router.use('/:workspaceSlug/api-keys', checkMemberMiddleware, apiKeyRoutes);
+
+// --- Slack Integration (by Workspace Slug) ---
+router.use('/:workspaceSlug/slack', checkAdminMiddleware, slackWorkspaceRoutes);
 
 // --- Team Management (by Workspace Slug) ---
 router.get('/:slug/team', checkMemberMiddleware, getWorkspaceTeam);
