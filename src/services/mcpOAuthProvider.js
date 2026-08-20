@@ -162,15 +162,12 @@ export class TaskgidMcpOAuthProvider {
             resource: params.resource ? params.resource.toString() : null,
         });
 
-        res.cookie('mcp_oauth_pending', pending, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: PENDING_TTL_MS,
-            path: '/',
-        });
-
-        res.redirect(302, `${apiOrigin()}/mcp/oauth/consent`);
+        // Carry the pending grant in the query string, not only a cookie.
+        // Authorize and consent may land on different hosts (deployment URL vs
+        // PUBLIC_API_URL), and a cookie set on one is invisible to the other.
+        const consent = new URL('/mcp/oauth/consent', `${apiOrigin()}/`);
+        consent.searchParams.set('pending', pending);
+        res.redirect(302, consent.toString());
     }
 
     /**

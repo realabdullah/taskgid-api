@@ -150,7 +150,7 @@ ${STYLES}
  * @param {string} [opts.clientName] - Client display name.
  * @return {string} HTML.
  */
-export const renderLoginPage = ({error, clientName} = {}) => {
+export const renderLoginPage = ({error, clientName, pending} = {}) => {
     const who = clientName ?
         `<strong>${esc(clientName)}</strong> wants` :
         'A client wants';
@@ -162,6 +162,7 @@ export const renderLoginPage = ({error, clientName} = {}) => {
       ${error ? `<div class="error">${esc(error)}</div>` : ''}
       <form method="post" action="/mcp/oauth/consent">
         <input type="hidden" name="step" value="login"/>
+        <input type="hidden" name="pending" value="${esc(pending)}"/>
         <label for="email">Email</label>
         <input id="email" name="email" type="email"
           autocomplete="username" required autofocus/>
@@ -189,6 +190,7 @@ export const renderLoginPage = ({error, clientName} = {}) => {
 export const renderWorkspacePage = ({
     workspaces,
     session,
+    pending,
     error,
     clientName,
     userLabel,
@@ -222,6 +224,7 @@ export const renderWorkspacePage = ({
           ${error ? `<div class="error">${esc(error)}</div>` : ''}
           <form method="post" action="/mcp/oauth/consent">
             <input type="hidden" name="step" value="approve"/>
+            <input type="hidden" name="pending" value="${esc(pending)}"/>
             <input type="hidden" name="session" value="${esc(session)}"/>
             <label for="workspaceId">Workspace</label>
             <select id="workspaceId" name="workspaceId" required>
