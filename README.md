@@ -163,12 +163,22 @@ Public callbacks (no session auth; Slack signs interactivity):
 ## MCP server
 
 `POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
-Streamable HTTP endpoint. Authenticate with a workspace API key
-(`Authorization: Bearer tg_key_…`); session JWTs are rejected because a key
-already pins the call to one workspace.
+Streamable HTTP endpoint. Clients authenticate in one of two ways:
 
-Tools (each enforces the key issuer's membership and role the same way the
-REST routes do):
+1. **OAuth 2.1 (Claude.ai and other remote MCP clients)** — discovery at
+   `/.well-known/oauth-authorization-server`, dynamic client registration at
+   `/register`, authorization code + PKCE at `/authorize` and `/token`. The
+   user signs in at `/mcp/oauth/consent` and picks a workspace. No static
+   Client ID or secret is required; leave those fields empty in Claude.
+2. **Workspace API key** — `Authorization: Bearer tg_key_…` for clients that
+   only support a bearer header (for example Cursor with a pasted key).
+
+Session JWTs are rejected: credentials must pin the call to one workspace.
+`PUBLIC_API_URL` must be the public HTTPS origin of this API so issuer and
+redirect URLs match what clients call.
+
+Tools (each enforces the actor's membership and role the same way the REST
+routes do):
 
 | Tool | REST equivalent |
 | --- | --- |
@@ -180,8 +190,7 @@ REST routes do):
 | `get_workspace_summary` | `GET /workspaces/:slug/statistics` |
 
 Mutations write `TaskActivity` rows with `source: agent` so the audit trail
-distinguishes agent actions from interactive ones. Point an MCP client at
-`{PUBLIC_API_URL}/mcp` with the key in the Authorization header.
+distinguishes agent actions from interactive ones.
 
 ## Notifications
 
