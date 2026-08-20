@@ -68,24 +68,31 @@ const captureRawBody = (req, _res, buf) => {
 app.use(bodyParser.json({verify: captureRawBody}));
 app.use(bodyParser.urlencoded({extended: true, verify: captureRawBody}));
 
-// CORS middleware. Include this API's own origin so same-origin form posts
-// from the MCP OAuth consent page (served here) are not rejected when the
-// browser sends an Origin header.
-const allowedOrigins = [
+// CORS: SPA origin(s), this API's configured public origin, and the request's
+// own host. The last matters for MCP consent — the form is served from whatever
+// host the browser hit (custom domain, Vercel URL, …), which may not equal
+// PUBLIC_API_URL. Reject with callback(null, false), never throw: throwing
+// becomes an unhandled 500 instead of a quiet CORS failure.
+const allowedOrigins = new Set([
     process.env.FRONTEND_URL || 'http://localhost:5173',
     'http://localhost:3000',
     apiOrigin(),
-].filter(Boolean);
-app.use(cors({
-    origin: function(origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true,
-}));
+].filter(Boolean));
+app.use((req, res, next) => {
+    const requestOrigin = `${req.protocol}://${req.get('host')}`;
+    cors({
+        origin: (origin, callback) => {
+            if (!origin ||
+                allowedOrigins.has(origin) ||
+                origin === requestOrigin) {
+                callback(null, true);
+                return;
+            }
+            callback(null, false);
+        },
+        credentials: true,
+    })(req, res, next);
+});
 
 // Helmet middleware for secure HTTP headers
 app.use(helmet());
