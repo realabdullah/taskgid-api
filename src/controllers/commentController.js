@@ -24,6 +24,7 @@ import {
   queueDeliveriesForEvent,
   dispatchQueuedDeliveries,
 } from "../services/webhookService.js";
+import { notifySlackForEvent } from "../services/slackService.js";
 
 /**
  * Marks which of the given comments the requesting user has already liked, so a
@@ -341,20 +342,30 @@ export const addTaskComment = async (req, res) => {
         workspaceId: task.workspaceId,
         type: WORKSPACE_EVENTS.COMMENT_CREATED,
         actorId: userId,
-        payload: { taskId: task.id, commentId: populatedComment.id },
+        payload: {
+          taskId: task.id,
+          taskTitle: task.title,
+          commentId: populatedComment.id,
+        },
       },
       { transaction: t },
     );
     const webhookDeliveries = await queueDeliveriesForEvent(event, { transaction: t });
 
     await t.commit();
-    await emitWorkspaceEvent({
+    const commentEvent = {
       workspaceId: task.workspaceId,
       type: WORKSPACE_EVENTS.COMMENT_CREATED,
       actorId: userId,
-      payload: { taskId: task.id, commentId: populatedComment.id },
-    });
+      payload: {
+        taskId: task.id,
+        taskTitle: task.title,
+        commentId: populatedComment.id,
+      },
+    };
+    await emitWorkspaceEvent(commentEvent);
     await dispatchQueuedDeliveries(webhookDeliveries);
+    await notifySlackForEvent(commentEvent);
     return res.status(201).json({
       success: true,
       data: populatedComment.toJSON(),

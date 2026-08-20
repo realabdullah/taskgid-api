@@ -134,6 +134,32 @@ themselves:
 - `POST /` — create; response carries the raw key once
 - `DELETE /:id` — revoke; the owner or a workspace admin can revoke any key
 
+## Slack
+
+Outbound workspace events to a Slack channel, plus Mark done / Claim buttons
+on those messages. Requires a Slack app with bot scopes `chat:write`,
+`channels:read`, `groups:read`, `users:read`, and `users:read.email`. Set
+`SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and `SLACK_SIGNING_SECRET`. Point
+the app's redirect URL at `{PUBLIC_API_URL}/slack/oauth/callback` and its
+interactivity request URL at `{PUBLIC_API_URL}/slack/interactions`.
+
+Without those credentials the management endpoints report `configured: false`
+and OAuth is refused; event publishing is a no-op when no installation is
+active.
+
+Managed at `/workspaces/:workspaceSlug/slack`, admin or creator only:
+
+- `GET /` — current installation (without the bot token) and `configured`
+- `POST /connect` — returns the Slack authorize `{url}`
+- `GET /channels` — channels the bot can see
+- `PATCH /` — set `channelId`, `eventTypes`, or `isActive`
+- `DELETE /` — disconnect
+
+Public callbacks (no session auth; Slack signs interactivity):
+
+- `GET /slack/oauth/callback` — finishes install, redirects to settings
+- `POST /slack/interactions` — button actions
+
 ## MCP server
 
 `POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
@@ -163,6 +189,7 @@ distinguishes agent actions from interactive ones. Point an MCP client at
 - **Realtime** — Pusher, see above.
 - **Email** — ZeptoMail first, falling back to Resend, via
   `ZEPTO_MAIL_TOKEN` / `RESEND_API_KEY`.
+- **Slack** — see above.
 
 ## API documentation
 
