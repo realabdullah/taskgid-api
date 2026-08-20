@@ -160,6 +160,29 @@ Public callbacks (no session auth; Slack signs interactivity):
 - `GET /slack/oauth/callback` — finishes install, redirects to settings
 - `POST /slack/interactions` — button actions
 
+## MCP server
+
+`POST /mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+Streamable HTTP endpoint. Authenticate with a workspace API key
+(`Authorization: Bearer tg_key_…`); session JWTs are rejected because a key
+already pins the call to one workspace.
+
+Tools (each enforces the key issuer's membership and role the same way the
+REST routes do):
+
+| Tool | REST equivalent |
+| --- | --- |
+| `list_tasks` | `GET /workspaces/:slug/tasks` |
+| `search_tasks` | `GET /workspaces/:slug/tasks/search` |
+| `create_task` | `POST /workspaces/:slug/tasks` |
+| `update_task` | `PATCH /workspaces/:slug/tasks/:id` |
+| `add_comment` | `POST /workspaces/:slug/tasks/:id/comments` |
+| `get_workspace_summary` | `GET /workspaces/:slug/statistics` |
+
+Mutations write `TaskActivity` rows with `source: agent` so the audit trail
+distinguishes agent actions from interactive ones. Point an MCP client at
+`{PUBLIC_API_URL}/mcp` with the key in the Authorization header.
+
 ## Notifications
 
 - **In-app / push** — Novu, configured via `NOVU_API_KEY`.

@@ -24,6 +24,7 @@ import pusherRoutes from './routes/pusherRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import slackRoutes from './routes/slackRoutes.js';
+import mcpRoutes from './routes/mcpRoutes.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -101,6 +102,7 @@ app.use('/api/pusher', pusherRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/media', mediaRoutes);
 app.use('/slack', slackRoutes);
+app.use('/mcp', mcpRoutes);
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
