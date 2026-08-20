@@ -239,7 +239,7 @@ export const renderWorkspacePage = ({
 };
 
 /**
- * Generic error page when the pending cookie is missing.
+ * Generic error page when the pending grant is missing.
  * @param {string} message - Error text.
  * @return {string} HTML.
  */
@@ -252,3 +252,47 @@ export const renderErrorPage = (message) => page({
       MCP client.</p>
     `,
 });
+
+/**
+ * Hands the browser back to the MCP client after consent. Uses a meta refresh
+ * plus a manual link so a blocked 302 is not a silent blank page.
+ * @param {string} redirectUrl - Client callback with code and state.
+ * @return {string} HTML.
+ */
+export const renderRedirectPage = (redirectUrl) => {
+    const href = esc(redirectUrl);
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta http-equiv="refresh" content="0;url=${href}"/>
+<title>Returning to client · Taskgid</title>
+<style>
+${STYLES}
+a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 42px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Taskgid · MCP</div>
+  <h1>Access granted</h1>
+  <p>Returning you to the MCP client to finish connecting.</p>
+  <p><a class="button" href="${href}">Continue</a></p>
+  <p class="meta">If nothing happens, use the button above.</p>
+</main>
+</body>
+</html>`;
+};

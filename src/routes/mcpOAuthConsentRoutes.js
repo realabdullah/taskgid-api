@@ -10,6 +10,7 @@ import {
 import {
     renderErrorPage,
     renderLoginPage,
+    renderRedirectPage,
     renderWorkspacePage,
 } from '../services/mcpOAuthConsent.js';
 
@@ -46,9 +47,13 @@ const clientLabel = async (clientId) => {
  * @return {void}
  */
 const allowInlineStyles = (res) => {
+    // form-action must allow the MCP client's redirect_uri (e.g. claude.ai).
+    // Restricting it to 'self' makes Allow access appear to hang: the 302 is
+    // issued but the browser refuses to navigate off this origin.
     res.set(
         'Content-Security-Policy',
-        'default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'self\'',
+        'default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; ' +
+            'form-action \'self\' https: http://localhost:* http://127.0.0.1:*',
     );
 };
 
@@ -148,8 +153,12 @@ const handleConsent = async (req, res) => {
                 user,
                 workspaceId: req.body?.workspaceId,
             });
-            res.redirect(302, redirectUrl);
+            // Prefer an HTML handoff over a bare 302: CSP form-action and some
+            // browsers treat cross-origin form redirects poorly, which looked
+            // like a hang after Allow access.
+            res.status(200).type('html').send(renderRedirectPage(redirectUrl));
         } catch (err) {
+            console.error('MCP consent approve failed:', err);
             const workspaces = await listConsentWorkspaces(user.id);
             res.status(err.status || 400).type('html').send(renderWorkspacePage({
                 workspaces,
