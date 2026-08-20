@@ -68,10 +68,16 @@ const captureRawBody = (req, _res, buf) => {
 app.use(bodyParser.json({verify: captureRawBody}));
 app.use(bodyParser.urlencoded({extended: true, verify: captureRawBody}));
 
-// CORS middleware
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'http://localhost:3000'];
+// CORS middleware. Include this API's own origin so same-origin form posts
+// from the MCP OAuth consent page (served here) are not rejected when the
+// browser sends an Origin header.
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://localhost:3000',
+    apiOrigin(),
+].filter(Boolean);
 app.use(cors({
-    origin: function (origin, callback) {
+    origin: function(origin, callback) {
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
