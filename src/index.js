@@ -25,6 +25,13 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import slackRoutes from './routes/slackRoutes.js';
 import mcpRoutes from './routes/mcpRoutes.js';
+import {mcpAuthRouter} from '@modelcontextprotocol/sdk/server/auth/router.js';
+import {
+    apiOrigin,
+    createMcpOAuthProvider,
+    MCP_SCOPES,
+    mcpResourceUrl,
+} from './services/mcpOAuthProvider.js';
 
 import setupAssociations from './models/associations.js';
 import {syncDatabase} from './config/database.js';
@@ -34,6 +41,23 @@ const port = process.env.PORT || 3000;
 
 // Trust proxy for Vercel/proxied environments
 app.set('trust proxy', 1);
+
+// MCP OAuth (RFC 8414 / 7591 / PKCE). Mounted at the app root so discovery
+// lands at /.well-known/oauth-authorization-server as clients expect.
+// HTTP issuer URLs are allowed only outside production (local dev).
+if (process.env.NODE_ENV !== 'production') {
+    process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL ??= 'true';
+}
+const mcpOAuthProvider = createMcpOAuthProvider();
+const issuer = new URL(apiOrigin());
+app.use(mcpAuthRouter({
+    provider: mcpOAuthProvider,
+    issuerUrl: issuer,
+    baseUrl: issuer,
+    resourceServerUrl: mcpResourceUrl(),
+    scopesSupported: MCP_SCOPES,
+    resourceName: 'Taskgid MCP',
+}));
 
 // Capture the exact body bytes Slack signed, before any parser mutates them.
 const captureRawBody = (req, _res, buf) => {

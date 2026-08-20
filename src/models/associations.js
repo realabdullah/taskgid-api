@@ -23,6 +23,9 @@ import WebhookEndpoint from './WebhookEndpoint.js';
 import WebhookDelivery from './WebhookDelivery.js';
 import ApiKey from './ApiKey.js';
 import SlackInstallation from './SlackInstallation.js';
+import './McpOAuthClient.js';
+import McpOAuthCode from './McpOAuthCode.js';
+import McpOAuthToken from './McpOAuthToken.js';
 
 // User associations
 User.hasMany(Task, {foreignKey: 'createdById', as: 'createdTasks'});
@@ -144,6 +147,14 @@ Workspace.hasMany(ApiKey, {foreignKey: 'workspaceId', as: 'apiKeys'});
 SlackInstallation.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
 SlackInstallation.belongsTo(User, {foreignKey: 'installedById', as: 'installer'});
 Workspace.hasOne(SlackInstallation, {foreignKey: 'workspaceId', as: 'slackInstallation'});
+
+// MCP OAuth associations
+McpOAuthCode.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+McpOAuthCode.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+McpOAuthToken.belongsTo(User, {foreignKey: 'userId', as: 'user'});
+McpOAuthToken.belongsTo(Workspace, {foreignKey: 'workspaceId', as: 'workspace'});
+User.hasMany(McpOAuthToken, {foreignKey: 'userId', as: 'mcpOAuthTokens'});
+Workspace.hasMany(McpOAuthToken, {foreignKey: 'workspaceId', as: 'mcpOAuthTokens'});
 
 /**
  * Sets up all model associations

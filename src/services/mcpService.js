@@ -14,20 +14,13 @@ import {invokeHandler} from '../utils/invokeHandler.js';
 import {runAsAgent, logTaskActivity} from '../utils/activityLogger.js';
 
 /**
- * Loads the workspace an API key is scoped to and confirms the issuer is still
- * a member. Throws a plain Error with a `status` when either check fails.
- * @param {Object} apiKey - Active ApiKey row.
- * @param {Object} user - Issuing user.
- * @return {Promise<Workspace>} The workspace.
+ * Confirms the user is still a member of the workspace (owner counts).
+ * @param {Workspace} workspace - Workspace row.
+ * @param {Object} user - Acting user.
+ * @return {Promise<void>}
  */
-const resolveScopedWorkspace = async (apiKey, user) => {
-    const workspace = await Workspace.findByPk(apiKey.workspaceId);
-    if (!workspace) {
-        const err = new Error('Workspace not found for this API key');
-        err.status = 404;
-        throw err;
-    }
-
+const assertMembership = async (workspace, user) => {
+    if (workspace.userId === user.id) return;
     const membership = await WorkspaceTeam.findOne({
         where: {workspaceId: workspace.id, userId: user.id},
     });
@@ -36,7 +29,37 @@ const resolveScopedWorkspace = async (apiKey, user) => {
         err.status = 403;
         throw err;
     }
+};
 
+/**
+ * Loads the workspace for this MCP call. Prefers an OAuth-resolved workspace,
+ * otherwise the API key's scope. Confirms the actor is still a member.
+ * @param {Object} ctx - Auth context.
+ * @param {Object} [ctx.apiKey] - Active ApiKey row, when key-authenticated.
+ * @param {Object} ctx.user - Acting user.
+ * @param {Workspace} [ctx.workspace] - Pre-resolved workspace (OAuth path).
+ * @return {Promise<Workspace>} The workspace.
+ */
+const resolveScopedWorkspace = async ({apiKey, user, workspace: preloaded}) => {
+    if (preloaded) {
+        await assertMembership(preloaded, user);
+        return preloaded;
+    }
+
+    if (!apiKey) {
+        const err = new Error('No workspace scope for this credential');
+        err.status = 401;
+        throw err;
+    }
+
+    const workspace = await Workspace.findByPk(apiKey.workspaceId);
+    if (!workspace) {
+        const err = new Error('Workspace not found for this API key');
+        err.status = 404;
+        throw err;
+    }
+
+    await assertMembership(workspace, user);
     return workspace;
 };
 
@@ -55,29 +78,34 @@ const toToolResult = (result) => {
 };
 
 /**
- * Builds a fresh MCP server whose tools act as the given API-key identity.
+ * Builds a fresh MCP server whose tools act as the given identity.
  *
  * Stateless per request: the Streamable HTTP transport creates one of these
  * for every POST, so nothing is shared across serverless invocations.
  * @param {Object} ctx - Auth context from the HTTP request.
- * @param {Object} ctx.user - Issuing user.
- * @param {Object} ctx.apiKey - Active workspace-scoped API key.
+ * @param {Object} ctx.user - Acting user.
+ * @param {Object} [ctx.apiKey] - Workspace-scoped API key, when used.
+ * @param {Workspace} [ctx.workspace] - Pre-resolved workspace (OAuth path).
  * @return {McpServer} Configured server with the six tools registered.
  */
 export const createMcpServer = (ctx) => {
-    const {user, apiKey} = ctx;
+    const {user, apiKey = null, workspace: preloadedWorkspace = null} = ctx;
     const server = new McpServer({
         name: 'taskgid',
         version: '1.0.0',
     });
 
     /**
-     * Shared prelude: resolve the key's workspace and build the fake request
-     * pieces controllers expect.
+     * Shared prelude: resolve the workspace and build the fake request pieces
+     * controllers expect.
      * @return {Promise<{workspace: Workspace, base: Object}>} Scope + request base.
      */
     const scoped = async () => {
-        const workspace = await resolveScopedWorkspace(apiKey, user);
+        const workspace = await resolveScopedWorkspace({
+            apiKey,
+            user,
+            workspace: preloadedWorkspace,
+        });
         return {
             workspace,
             base: {
