@@ -16,21 +16,17 @@ import {
 // eslint-disable-next-line new-cap
 const router = express.Router();
 
-const PENDING_COOKIE = 'mcp_oauth_pending';
-
 /**
- * Reads a cookie value from the Cookie header.
+ * Reads the signed pending-grant token from the form body or query string.
+ * Cookies are not used: authorize and consent may hit different hosts.
  * @param {Object} req - Express request.
- * @param {string} name - Cookie name.
- * @return {string|undefined} Cookie value.
+ * @return {string|undefined} Raw pending token.
  */
-const readCookie = (req, name) => {
-    const header = req.headers.cookie;
-    if (!header) return undefined;
-    for (const part of header.split(';')) {
-        const [k, ...rest] = part.trim().split('=');
-        if (k === name) return decodeURIComponent(rest.join('='));
-    }
+const readPendingToken = (req) => {
+    const fromBody = req.body?.pending;
+    if (typeof fromBody === 'string' && fromBody) return fromBody;
+    const fromQuery = req.query?.pending;
+    if (typeof fromQuery === 'string' && fromQuery) return fromQuery;
     return undefined;
 };
 
@@ -45,12 +41,6 @@ const clientLabel = async (clientId) => {
 };
 
 /**
- * GET /mcp/oauth/consent — login form, or error when no pending auth.
- * @param {Object} req - Express request.
- * @param {Object} res - Express response.
- * @return {Promise<void>}
- */
-/**
  * Consent pages ship a small inline stylesheet; loosen CSP for this route only.
  * @param {Object} res - Express response.
  * @return {void}
@@ -62,17 +52,24 @@ const allowInlineStyles = (res) => {
     );
 };
 
+/**
+ * GET /mcp/oauth/consent — login form, or error when no pending auth.
+ * @param {Object} req - Express request.
+ * @param {Object} res - Express response.
+ * @return {Promise<void>}
+ */
 const showConsent = async (req, res) => {
     allowInlineStyles(res);
-    const pending = verifyPendingAuth(readCookie(req, PENDING_COOKIE));
-    if (!pending) {
+    const pendingToken = readPendingToken(req);
+    const pending = verifyPendingAuth(pendingToken);
+    if (!pending || !pendingToken) {
         res.status(400).type('html').send(renderErrorPage(
             'No pending authorization. Start the connection again from your MCP client.',
         ));
         return;
     }
     const name = await clientLabel(pending.clientId);
-    res.type('html').send(renderLoginPage({clientName: name}));
+    res.type('html').send(renderLoginPage({clientName: name, pending: pendingToken}));
 };
 
 /**
@@ -83,8 +80,9 @@ const showConsent = async (req, res) => {
  */
 const handleConsent = async (req, res) => {
     allowInlineStyles(res);
-    const pending = verifyPendingAuth(readCookie(req, PENDING_COOKIE));
-    if (!pending) {
+    const pendingToken = readPendingToken(req);
+    const pending = verifyPendingAuth(pendingToken);
+    if (!pending || !pendingToken) {
         res.status(400).type('html').send(renderErrorPage(
             'Authorization session expired. Start again from your MCP client.',
         ));
@@ -102,6 +100,7 @@ const handleConsent = async (req, res) => {
             res.status(401).type('html').send(renderLoginPage({
                 error: 'Invalid email or password.',
                 clientName,
+                pending: pendingToken,
             }));
             return;
         }
@@ -115,6 +114,7 @@ const handleConsent = async (req, res) => {
         res.type('html').send(renderWorkspacePage({
             workspaces,
             session,
+            pending: pendingToken,
             clientName,
             userLabel: user.email,
         }));
@@ -127,6 +127,7 @@ const handleConsent = async (req, res) => {
             res.status(400).type('html').send(renderLoginPage({
                 error: 'Session expired. Sign in again.',
                 clientName,
+                pending: pendingToken,
             }));
             return;
         }
@@ -136,6 +137,7 @@ const handleConsent = async (req, res) => {
             res.status(401).type('html').send(renderLoginPage({
                 error: 'Account not found. Sign in again.',
                 clientName,
+                pending: pendingToken,
             }));
             return;
         }
@@ -146,13 +148,13 @@ const handleConsent = async (req, res) => {
                 user,
                 workspaceId: req.body?.workspaceId,
             });
-            res.clearCookie(PENDING_COOKIE, {path: '/'});
             res.redirect(302, redirectUrl);
         } catch (err) {
             const workspaces = await listConsentWorkspaces(user.id);
             res.status(err.status || 400).type('html').send(renderWorkspacePage({
                 workspaces,
                 session: req.body?.session,
+                pending: pendingToken,
                 clientName,
                 userLabel: user.email,
                 error: err.message || 'Unable to complete authorization.',
@@ -164,6 +166,7 @@ const handleConsent = async (req, res) => {
     res.status(400).type('html').send(renderLoginPage({
         error: 'Unknown step.',
         clientName,
+        pending: pendingToken,
     }));
 };
 
